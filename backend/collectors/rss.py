@@ -39,7 +39,8 @@ async def fetch_feeds(
             try:
                 resp = await client.get(feed_url, follow_redirects=True)
                 resp.raise_for_status()
-                parsed = feedparser.parse(resp.text)
+                # XML은 바이너리로 파싱해야 인코딩을 feedparser가 올바르게 감지
+                parsed = feedparser.parse(resp.content)
                 articles = _normalize_entries(parsed.entries[:max_per_feed], source_name)
                 all_articles.extend(articles)
             except Exception as e:

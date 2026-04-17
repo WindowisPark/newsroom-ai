@@ -61,25 +61,42 @@ async def classify_batch(
     db: AsyncSession,
     max_concurrent: int = 5,
 ) -> list[ArticleAnalysis]:
-    """여러 기사를 동시 분류 (Semaphore로 동시성 제한)"""
+    """여러 기사를 동시 분류 (LLM 호출만 병렬, DB 저장은 순차)"""
     semaphore = asyncio.Semaphore(max_concurrent)
-    results: list[ArticleAnalysis] = []
+    pending = [a for a in articles if a.analysis is None]
 
-    async def _classify_one(article: Article):
+    # 1단계: LLM 호출만 병렬로 수행
+    async def _classify_only(article: Article) -> tuple[Article, dict] | None:
         async with semaphore:
             try:
-                analysis = await classify_and_save(article, db)
-                results.append(analysis)
+                result = await classify_article(article)
+                return (article, result)
             except Exception as e:
                 logger.warning(f"분류 실패 [{article.id}] {article.title[:30]}: {e}")
+                return None
 
-    tasks = [
-        _classify_one(article)
-        for article in articles
-        if article.analysis is None
-    ]
+    llm_results = await asyncio.gather(*[_classify_only(a) for a in pending])
 
-    if tasks:
-        await asyncio.gather(*tasks)
+    # 2단계: DB 저장은 순차적으로 (commit 충돌 방지)
+    results: list[ArticleAnalysis] = []
+    for item in llm_results:
+        if item is None:
+            continue
+        article, result = item
+        content = result["content"]
+        analysis = ArticleAnalysis(
+            article_id=article.id,
+            category=content.get("category", "society"),
+            keywords=content.get("keywords", []),
+            entities=content.get("entities", []),
+            sentiment=content.get("sentiment", "neutral"),
+            importance_score=float(content.get("importance_score", 5.0)),
+            analyzed_at=datetime.now(timezone.utc),
+            model_used=result["model_used"],
+        )
+        db.add(analysis)
+        await db.commit()
+        await db.refresh(analysis)
+        results.append(analysis)
 
     return results
