@@ -80,6 +80,14 @@ async def collection_pipeline():
                 "count": len(analyses),
             })
 
+            # 속보 감지: importance_score >= 9.0 기사가 있으면 알림
+            breaking = [a for a in analyses if a.importance_score >= 9.0]
+            if breaking:
+                broadcast_event("breaking_alert", {
+                    "count": len(breaking),
+                    "titles": [a.article.title if a.article else "" for a in breaking][:3],
+                })
+
         # 3. 자동 보고: 충분한 기사가 분석되면 브리핑 + 의제 자동 생성
         settings = get_settings()
         if settings.auto_report_enabled:

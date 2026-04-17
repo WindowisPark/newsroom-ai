@@ -10,6 +10,13 @@ from backend.config import get_settings
 
 NAVER_SEARCH_URL = "https://openapi.naver.com/v1/search/news.json"
 
+# 비뉴스 도메인 필터 (블로그, SNS 등 노이즈 제거)
+_NON_NEWS_DOMAINS = {
+    "tistory.com", "blog.naver.com", "cafe.naver.com", "post.naver.com",
+    "youtube.com", "instagram.com", "twitter.com", "x.com", "facebook.com",
+    "brunch.co.kr", "medium.com", "velog.io", "notion.so",
+}
+
 
 async def fetch_news(
     query: str = "주요뉴스",
@@ -68,17 +75,33 @@ def _normalize_articles(raw_items: list[dict]) -> list[dict]:
         title = _strip_html(item.get("title", ""))
         if not title:
             continue
+        url = item.get("originallink") or item.get("link", "")
+        # 비뉴스 도메인 필터링
+        if _is_non_news_domain(url):
+            continue
         articles.append({
             "title": title,
             "description": _strip_html(item.get("description", "")),
             "content": None,
-            "url": item.get("originallink") or item.get("link", ""),
-            "source_name": _extract_source(item.get("originallink", "")),
+            "url": url,
+            "source_name": _extract_source(url),
             "source_type": "domestic",
             "source_api": "naver",
             "published_at": _parse_naver_date(item.get("pubDate")),
         })
     return articles
+
+
+def _is_non_news_domain(url: str) -> bool:
+    """비뉴스 도메인 여부 확인"""
+    if not url:
+        return False
+    try:
+        from urllib.parse import urlparse
+        domain = urlparse(url).netloc.lower().replace("www.", "")
+        return any(blocked in domain for blocked in _NON_NEWS_DOMAINS)
+    except Exception:
+        return False
 
 
 def _strip_html(text: str) -> str:

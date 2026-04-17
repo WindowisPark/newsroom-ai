@@ -1,7 +1,7 @@
 """E2E 파이프라인 테스트 - 수집 → 분석 → 자동 보고 전체 흐름"""
 
 import uuid
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -128,13 +128,15 @@ async def test_자동_브리핑_생성(db_session):
         "model_used": "test-sonnet",
     }
 
+    # collected_at이 UTC이므로 UTC 기준 오늘 날짜 사용
+    today_utc = datetime.now(timezone.utc).date()
     with patch("backend.analyzers.reporter.call_llm", new_callable=AsyncMock, return_value=mock_llm):
-        report = await generate_briefing(db_session, date.today())
+        report = await generate_briefing(db_session, today_utc)
         assert report.headline == "오늘의 핵심 브리핑"
         assert len(report.sections) == 2
 
     # DB에 저장 확인
-    stmt = select(BriefingReport).where(BriefingReport.date == date.today())
+    stmt = select(BriefingReport).where(BriefingReport.date == today_utc)
     result = await db_session.execute(stmt)
     saved = result.scalar_one_or_none()
     assert saved is not None

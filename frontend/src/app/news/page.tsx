@@ -194,9 +194,11 @@ export default function NewsPage() {
         </Card>
       ) : (
         <div className="space-y-2">
-          {articles.map((article) => (
+          {articles.map((article) => {
+            const isHigh = (article.analysis?.importance_score ?? 0) >= 8.0;
+            return (
             <Link key={article.id} href={`/news/${article.id}`}>
-              <Card size="sm" className="transition-colors hover:bg-muted/50">
+              <Card size="sm" className={`transition-colors hover:bg-muted/50 ${isHigh ? "border-l-4 border-l-red-500 bg-red-50/30" : ""}`}>
                 <CardContent>
                   <div className="flex items-start justify-between gap-4">
                     <div className="flex-1 min-w-0">
@@ -211,6 +213,9 @@ export default function NewsPage() {
                       </div>
                     </div>
                     <div className="flex flex-col items-end gap-1.5 shrink-0">
+                      {isHigh && (
+                        <Badge variant="destructive" className="text-[10px]">중요</Badge>
+                      )}
                       {article.analysis?.category && (
                         <Badge variant="secondary" className="text-[10px]">
                           {categoryLabel[article.analysis.category] || article.analysis.category}
@@ -231,7 +236,8 @@ export default function NewsPage() {
                 </CardContent>
               </Card>
             </Link>
-          ))}
+          );
+          })}
         </div>
       )}
 

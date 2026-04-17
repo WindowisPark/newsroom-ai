@@ -205,8 +205,10 @@ async def test_의제_분석_mock(client, db_session):
         "model_used": "test-model",
     }
 
+    from datetime import datetime, timezone
+    today_utc = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     with patch("backend.analyzers.agenda.call_llm", new_callable=AsyncMock, return_value=mock_llm_response):
-        resp = await client.get("/api/v1/analysis/agenda")
+        resp = await client.get(f"/api/v1/analysis/agenda?date={today_utc}")
         assert resp.status_code == 200
         data = resp.json()
         assert len(data["data"]["top_issues"]) == 1

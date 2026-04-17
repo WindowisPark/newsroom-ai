@@ -99,4 +99,37 @@ async def classify_batch(
         await db.refresh(analysis)
         results.append(analysis)
 
+    # 3단계: 보도 빈도 기반 중요도 보정
+    if results:
+        await _boost_by_frequency(results, db)
+
     return results
+
+
+async def _boost_by_frequency(analyses: list[ArticleAnalysis], db: AsyncSession):
+    """동일 배치 내 키워드 빈도로 importance_score 보정
+
+    같은 이슈를 여러 매체가 보도할수록 중요도가 올라가는 실제 편집 판단을 반영.
+    """
+    from collections import Counter
+
+    keyword_freq: Counter = Counter()
+    for a in analyses:
+        for kw in (a.keywords or []):
+            keyword_freq[kw] += 1
+
+    for a in analyses:
+        article_keywords = a.keywords or []
+        if not article_keywords:
+            continue
+        # 해당 기사 키워드의 평균 빈도
+        avg_freq = sum(keyword_freq[kw] for kw in article_keywords) / len(article_keywords)
+        # 빈도 2 이상이면 보정 시작, 최대 +2.0
+        boost = min(2.0, max(0, (avg_freq - 1)) * 0.5)
+        if boost > 0:
+            new_score = min(10.0, a.importance_score + boost)
+            if new_score != a.importance_score:
+                a.importance_score = new_score
+
+    await db.commit()
+    logger.info(f"보도 빈도 기반 중요도 보정 완료 ({len(analyses)}건)")

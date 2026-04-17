@@ -85,6 +85,18 @@ export async function getTimeline(topic: string, articleIds: string[]) {
   });
 }
 
+// Dashboard
+export async function getDashboardStats() {
+  return fetchAPI<{
+    total_articles_today: number;
+    unanalyzed_count: number;
+    high_importance_count: number;
+    breaking_count: number;
+    top_keywords: { keyword: string; count: number }[];
+    category_distribution: Record<string, number>;
+  }>("/dashboard/stats");
+}
+
 // System
 export async function getHealth() {
   return fetchAPI<HealthData>("/health");
