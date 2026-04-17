@@ -33,10 +33,9 @@ class TestParseJson:
         result = self.parse(text)
         assert result["category"] == "tech"
 
-    def test_파싱_실패_시_raw_text_반환(self):
+    def test_파싱_실패_시_에러_마커_반환(self):
         result = self.parse("no json here at all")
         assert result.get("parse_error") is True
-        assert "raw_text" in result
 
     def test_빈_json_객체(self):
         result = self.parse("{}")

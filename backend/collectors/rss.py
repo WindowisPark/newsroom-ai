@@ -1,10 +1,13 @@
 """RSS 피드 수집기 - 주요 언론사 피드 수집"""
 
+import logging
 from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
 
 import feedparser
 import httpx
+
+logger = logging.getLogger(__name__)
 
 # 주요 국내 언론사 RSS 피드
 DEFAULT_FEEDS = {
@@ -39,8 +42,8 @@ async def fetch_feeds(
                 parsed = feedparser.parse(resp.text)
                 articles = _normalize_entries(parsed.entries[:max_per_feed], source_name)
                 all_articles.extend(articles)
-            except Exception:
-                # 개별 피드 실패 시 건너뛰고 계속
+            except Exception as e:
+                logger.warning(f"[RSS] {source_name} 피드 수집 실패: {e}")
                 continue
 
     return all_articles

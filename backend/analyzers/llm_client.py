@@ -1,10 +1,13 @@
 """Anthropic API 클라이언트 - Haiku/Sonnet 라우팅"""
 
 import json
+import logging
 
 from anthropic import AsyncAnthropic
 
 from backend.config import get_settings
+
+logger = logging.getLogger(__name__)
 
 HAIKU_MODEL = "claude-haiku-4-5-20251001"
 SONNET_MODEL = "claude-sonnet-4-6-20250514"
@@ -44,6 +47,10 @@ async def call_llm(
 
     # JSON 추출 (코드 블록 안에 있을 수 있음)
     content = _parse_json(raw_text)
+
+    if content.get("parse_error"):
+        logger.error(f"LLM JSON 파싱 실패 (model={model}): {raw_text[:200]}")
+        raise ValueError(f"LLM 응답을 JSON으로 파싱할 수 없습니다: {raw_text[:100]}")
 
     return {
         "content": content,
