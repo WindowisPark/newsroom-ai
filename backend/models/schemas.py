@@ -32,6 +32,8 @@ class EntityOut(BaseModel):
     name: str
     type: str  # person / organization / location
 
+    model_config = {"from_attributes": True}
+
 
 class AnalysisOut(BaseModel):
     category: str
@@ -39,6 +41,8 @@ class AnalysisOut(BaseModel):
     entities: list[EntityOut]
     sentiment: str
     importance_score: float
+
+    model_config = {"from_attributes": True}
 
 
 class ArticleOut(BaseModel):
