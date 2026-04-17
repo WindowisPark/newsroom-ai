@@ -5,7 +5,7 @@ from datetime import date, datetime, timezone
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.analyzers.llm_client import SONNET_MODEL, call_llm
+from backend.analyzers.llm_client import MODEL_FOR, call_llm
 from backend.database.models import Article, ArticleAnalysis, BriefingReport
 from backend.prompts import BRIEFING_SYSTEM
 
@@ -43,7 +43,7 @@ async def generate_briefing(
     llm_result = await call_llm(
         system_prompt=BRIEFING_SYSTEM,
         user_message=user_message,
-        model=SONNET_MODEL,
+        model=MODEL_FOR["briefing"],
         max_tokens=4096,
     )
 

@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.analyzers.llm_client import HAIKU_MODEL, call_llm
+from backend.analyzers.llm_client import MODEL_FOR, call_llm
 from backend.database.models import Article, ArticleAnalysis
 from backend.prompts import CLASSIFIER_SYSTEM
 
@@ -25,7 +25,7 @@ async def classify_article(article: Article) -> dict:
     result = await call_llm(
         system_prompt=CLASSIFIER_SYSTEM,
         user_message=user_message,
-        model=HAIKU_MODEL,
+        model=MODEL_FOR["classify"],
         max_tokens=1024,
         temperature=0.1,
     )

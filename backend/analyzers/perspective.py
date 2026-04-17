@@ -5,7 +5,7 @@ from datetime import date, datetime, timezone
 from sqlalchemy import select, func, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.analyzers.llm_client import SONNET_MODEL, call_llm
+from backend.analyzers.llm_client import MODEL_FOR, call_llm
 from backend.database.models import Article, ArticleAnalysis, PerspectiveReport
 from backend.prompts import PERSPECTIVE_SYSTEM
 
@@ -38,7 +38,7 @@ async def compare_perspectives(
     llm_result = await call_llm(
         system_prompt=PERSPECTIVE_SYSTEM,
         user_message=user_message,
-        model=SONNET_MODEL,
+        model=MODEL_FOR["perspective"],
         max_tokens=4096,
     )
 

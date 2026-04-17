@@ -6,7 +6,7 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.analyzers.llm_client import SONNET_MODEL, call_llm
+from backend.analyzers.llm_client import MODEL_FOR, call_llm
 from backend.database.models import Article, HeadlineRecommendation
 from backend.prompts import HEADLINE_SYSTEM, TIMELINE_SYSTEM
 
@@ -31,7 +31,7 @@ async def recommend_headlines(
     llm_result = await call_llm(
         system_prompt=HEADLINE_SYSTEM,
         user_message=user_message,
-        model=SONNET_MODEL,
+        model=MODEL_FOR["headline"],
         max_tokens=2048,
     )
 
@@ -62,7 +62,7 @@ async def generate_timeline(
     llm_result = await call_llm(
         system_prompt=TIMELINE_SYSTEM,
         user_message=user_message,
-        model=SONNET_MODEL,
+        model=MODEL_FOR["timeline"],
         max_tokens=4096,
     )
 
