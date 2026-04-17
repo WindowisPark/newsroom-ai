@@ -18,6 +18,8 @@ class Settings(BaseSettings):
 
     # Scheduler
     collect_interval_minutes: int = 15
+    auto_report_enabled: bool = True
+    auto_report_min_articles: int = 5
 
     # App
     cors_origins: list[str] = ["http://localhost:3000"]

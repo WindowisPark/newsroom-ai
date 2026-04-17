@@ -1,16 +1,19 @@
-"""APScheduler - 주기적 뉴스 수집 + 분석 파이프라인"""
+"""APScheduler - 주기적 뉴스 수집 + 분석 + 자동 보고 파이프라인"""
 
 import logging
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.collectors.service import collect_all
 from backend.analyzers.classifier import classify_batch
+from backend.analyzers.reporter import generate_briefing
+from backend.analyzers.agenda import analyze_agenda
+from backend.config import get_settings
 from backend.database import async_session
-from backend.database.models import Article, ArticleAnalysis
+from backend.database.models import Article, ArticleAnalysis, BriefingReport, AgendaReport
 from backend.routers.sse import broadcast_event
 
 logger = logging.getLogger(__name__)
@@ -76,6 +79,62 @@ async def collection_pipeline():
                 "type": "classification",
                 "count": len(analyses),
             })
+
+        # 3. 자동 보고: 충분한 기사가 분석되면 브리핑 + 의제 자동 생성
+        settings = get_settings()
+        if settings.auto_report_enabled:
+            await _auto_generate_reports(db)
+
+
+async def _auto_generate_reports(db: AsyncSession):
+    """오늘 분석된 기사가 충분하면 브리핑/의제 자동 생성"""
+    settings = get_settings()
+    today = date.today()
+
+    # 오늘 분석된 기사 수 확인
+    count_stmt = (
+        select(func.count())
+        .select_from(ArticleAnalysis)
+        .join(Article)
+        .where(func.date(Article.collected_at) == today)
+    )
+    result = await db.execute(count_stmt)
+    analyzed_count = result.scalar() or 0
+
+    if analyzed_count < settings.auto_report_min_articles:
+        return
+
+    # 오늘 브리핑이 이미 있는지 확인
+    briefing_stmt = select(BriefingReport).where(BriefingReport.date == today)
+    existing_briefing = (await db.execute(briefing_stmt)).scalar_one_or_none()
+
+    if not existing_briefing:
+        try:
+            logger.info("Auto-generating daily briefing report...")
+            await generate_briefing(db, today)
+            broadcast_event("report_generated", {
+                "type": "briefing",
+                "date": today.isoformat(),
+            })
+            logger.info("Daily briefing report generated successfully")
+        except Exception as e:
+            logger.error(f"Auto briefing generation failed: {e}")
+
+    # 오늘 의제가 이미 있는지 확인
+    agenda_stmt = select(AgendaReport).where(AgendaReport.date == today)
+    existing_agenda = (await db.execute(agenda_stmt)).scalar_one_or_none()
+
+    if not existing_agenda:
+        try:
+            logger.info("Auto-generating daily agenda analysis...")
+            await analyze_agenda(db, today)
+            broadcast_event("report_generated", {
+                "type": "agenda",
+                "date": today.isoformat(),
+            })
+            logger.info("Daily agenda analysis generated successfully")
+        except Exception as e:
+            logger.error(f"Auto agenda generation failed: {e}")
 
 
 def start_scheduler(interval_minutes: int = 15):
