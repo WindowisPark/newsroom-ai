@@ -32,7 +32,7 @@ async def get_briefing(
     report = result.scalar_one_or_none()
 
     if not report:
-        raise HTTPException(status_code=404, detail=f"No briefing found for {target_date}")
+        return APIResponse(data=None)
 
     return APIResponse(data=BriefingOut(
         id=report.id,
