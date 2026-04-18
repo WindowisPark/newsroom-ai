@@ -1,13 +1,29 @@
 """RSS 피드 수집기 - 주요 언론사 피드 수집"""
 
 import logging
+import re
 from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
+from html import unescape
 
 import feedparser
 import httpx
 
 logger = logging.getLogger(__name__)
+
+
+def _strip_html(text: str) -> str:
+    """HTML 태그 및 엔티티 제거.
+
+    한겨레 RSS 등 일부 피드는 description에 썸네일용 <table><img> 만 담아
+    본문 텍스트가 비어 있는 경우가 있어, 태그 제거 후 공백만 남으면 빈 문자열
+    반환해 분류기(LLM)가 HTML 덩어리를 본문으로 오해하지 않도록 한다.
+    """
+    if not text:
+        return ""
+    clean = re.sub(r"<[^>]+>", "", text)
+    clean = unescape(clean)
+    return re.sub(r"\s+", " ", clean).strip()
 
 # 주요 국내 언론사 RSS 피드
 DEFAULT_FEEDS = {
@@ -54,12 +70,12 @@ def _normalize_entries(entries: list, source_name: str) -> list[dict]:
     """feedparser 엔트리를 공통 포맷으로 변환"""
     articles = []
     for entry in entries:
-        title = entry.get("title", "").strip()
+        title = _strip_html(entry.get("title", ""))
         if not title:
             continue
         articles.append({
             "title": title,
-            "description": entry.get("summary", ""),
+            "description": _strip_html(entry.get("summary", "")),
             "content": _extract_content(entry),
             "url": entry.get("link", ""),
             "source_name": source_name,
@@ -71,11 +87,13 @@ def _normalize_entries(entries: list, source_name: str) -> list[dict]:
 
 
 def _extract_content(entry) -> str | None:
-    """RSS 엔트리에서 본문 추출"""
+    """RSS 엔트리에서 본문 추출 (HTML 제거)"""
     content_list = entry.get("content", [])
-    if content_list:
-        return content_list[0].get("value", "")
-    return None
+    if not content_list:
+        return None
+    raw = content_list[0].get("value", "")
+    stripped = _strip_html(raw)
+    return stripped or None
 
 
 def _parse_entry_date(entry) -> datetime | None:
