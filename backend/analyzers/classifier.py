@@ -15,6 +15,30 @@ from backend.prompts import CLASSIFIER_SYSTEM
 logger = logging.getLogger(__name__)
 
 
+# ── 실패 기사 차단 ──
+# 같은 기사가 LLM 파싱/스키마 검증에 반복 실패하면 매 사이클 재시도로
+# 토큰이 지속 낭비된다. 프로세스 수명 동안 실패 횟수를 추적해 임계 초과 시
+# blocklist 에 넣어 이후 사이클에서 제외한다. 서버 재시작 시 초기화됨.
+_MAX_CLASSIFICATION_FAILURES = 3
+_failure_counts: dict[str, int] = {}
+_blocked_article_ids: set[str] = set()
+
+
+def get_blocked_article_ids() -> set[str]:
+    """차단된 기사 ID 목록 (str(UUID))"""
+    return _blocked_article_ids
+
+
+def _record_failure(article_id) -> None:
+    key = str(article_id)
+    _failure_counts[key] = _failure_counts.get(key, 0) + 1
+    if _failure_counts[key] >= _MAX_CLASSIFICATION_FAILURES:
+        _blocked_article_ids.add(key)
+        logger.warning(
+            f"기사 {key} 분류 {_MAX_CLASSIFICATION_FAILURES}회 연속 실패 → blocklist 등록"
+        )
+
+
 def _truncate_content(content: str, limit: int = 1000) -> str:
     """긴 본문을 머리+꼬리 구조로 자른다.
 
@@ -89,6 +113,7 @@ async def classify_batch(
                 return (article, result)
             except Exception as e:
                 logger.warning(f"분류 실패 [{article.id}] {article.title[:30]}: {e}")
+                _record_failure(article.id)
                 return None
 
     llm_results = await asyncio.gather(*[_classify_only(a) for a in pending])
@@ -103,6 +128,7 @@ async def classify_batch(
             parsed = ClassificationOut.model_validate(result["content"])
         except Exception as e:
             logger.warning(f"스키마 검증 실패 [{article.id}] {article.title[:30]}: {e}")
+            _record_failure(article.id)
             continue
         analysis = ArticleAnalysis(
             article_id=article.id,

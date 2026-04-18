@@ -1,5 +1,6 @@
 """분석 결과 API - 의제 설정, 관점 비교, 트렌드"""
 
+import time
 from datetime import date, datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -13,6 +14,13 @@ from backend.analyzers.agenda import analyze_agenda
 from backend.analyzers.perspective import compare_perspectives
 
 router = APIRouter(prefix="/analysis", tags=["analysis"])
+
+# ── /trends TTL 캐시 ──
+# /trends 는 매 호출마다 풀 스캔 + 집계라 반복 요청 시 DB 부하가 큼.
+# 5분 TTL 인메모리 캐시로 감소. 대시보드가 같은 period/type 을 자주 호출하는
+# 패턴이라 hit 률이 높다.
+_TRENDS_CACHE_TTL = 300
+_trends_cache: dict[tuple[str, str], tuple[float, TrendOut]] = {}
 
 
 @router.get("/agenda", response_model=APIResponse)
@@ -77,7 +85,12 @@ async def get_trends(
     type: str = Query("keyword", pattern="^(keyword|category|sentiment)$"),
     db: AsyncSession = Depends(get_db),
 ):
-    """트렌드 분석 (DB 집계 기반)"""
+    """트렌드 분석 (DB 집계 기반, 5분 TTL 캐시)"""
+    cache_key = (period, type)
+    cached = _trends_cache.get(cache_key)
+    if cached and time.monotonic() - cached[0] < _TRENDS_CACHE_TTL:
+        return APIResponse(data=cached[1])
+
     now = datetime.now(timezone.utc)
     hours_map = {"6h": 6, "12h": 12, "24h": 24, "7d": 168}
     since = now - timedelta(hours=hours_map[period])
@@ -89,7 +102,9 @@ async def get_trends(
     else:
         data_points = await _sentiment_trends(db, since)
 
-    return APIResponse(data=TrendOut(period=period, type=type, data_points=data_points))
+    payload = TrendOut(period=period, type=type, data_points=data_points)
+    _trends_cache[cache_key] = (time.monotonic(), payload)
+    return APIResponse(data=payload)
 
 
 async def _keyword_trends(db: AsyncSession, since: datetime) -> list[TrendSeries]:

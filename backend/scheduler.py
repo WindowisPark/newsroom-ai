@@ -8,7 +8,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.collectors.service import collect_all
-from backend.analyzers.classifier import classify_batch
+from backend.analyzers.classifier import classify_batch, get_blocked_article_ids
 from backend.analyzers.reporter import generate_briefing
 from backend.analyzers.agenda import analyze_agenda
 from backend.config import get_settings
@@ -61,12 +61,17 @@ async def collection_pipeline():
             })
 
         # 2. 미분석 기사에 대해 1차 분석 (Haiku)
+        # 반복 실패한 기사는 blocklist로 제외하여 토큰 낭비 방지
+        import uuid as _uuid
+        blocked_ids = [_uuid.UUID(aid) for aid in get_blocked_article_ids()]
         stmt = (
             select(Article)
             .outerjoin(ArticleAnalysis)
             .where(ArticleAnalysis.id.is_(None))
             .limit(30)  # 배치 크기 제한
         )
+        if blocked_ids:
+            stmt = stmt.where(~Article.id.in_(blocked_ids))
         unanalyzed = await db.execute(stmt)
         articles = list(unanalyzed.scalars().all())
 

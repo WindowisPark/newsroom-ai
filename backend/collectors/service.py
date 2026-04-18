@@ -77,7 +77,13 @@ async def _fetch_naver(query: str | None) -> list[dict]:
 
 
 async def _fetch_rss() -> list[dict]:
-    return await rss.fetch_feeds(max_per_feed=15)
+    # 국내 + 외신 RSS 동시 수집 (외신은 의제 도출/관점 비교의 기초 데이터)
+    domestic, foreign = await asyncio.gather(
+        rss.fetch_feeds(max_per_feed=15, source_type="domestic"),
+        rss.fetch_feeds(feeds=rss.FOREIGN_FEEDS, max_per_feed=10, source_type="foreign"),
+        return_exceptions=False,
+    )
+    return domestic + foreign
 
 
 async def _save_articles(db: AsyncSession, articles: list[dict]) -> int:

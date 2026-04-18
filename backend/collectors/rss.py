@@ -34,16 +34,26 @@ DEFAULT_FEEDS = {
     "동아일보": "https://rss.donga.com/total.xml",
 }
 
+# 외신 RSS 피드 - 국제 보도 프레임 비교 및 국내외 균형 수집
+FOREIGN_FEEDS = {
+    "BBC": "https://feeds.bbci.co.uk/news/world/rss.xml",
+    "The Guardian": "https://www.theguardian.com/world/rss",
+    "Al Jazeera": "https://www.aljazeera.com/xml/rss/all.xml",
+    "NYT": "https://rss.nytimes.com/services/xml/rss/nyt/World.xml",
+}
+
 
 async def fetch_feeds(
     feeds: dict[str, str] | None = None,
     max_per_feed: int = 10,
+    source_type: str = "domestic",
 ) -> list[dict]:
     """RSS 피드에서 뉴스 수집
 
     Args:
-        feeds: {매체명: RSS URL} 딕셔너리. None이면 기본 피드 사용.
+        feeds: {매체명: RSS URL} 딕셔너리. None이면 기본 국내 피드 사용.
         max_per_feed: 피드당 최대 수집 개수
+        source_type: "domestic" (국내) | "foreign" (외신). 의제/관점 분석에서 사용.
     """
     if feeds is None:
         feeds = DEFAULT_FEEDS
@@ -57,7 +67,11 @@ async def fetch_feeds(
                 resp.raise_for_status()
                 # XML은 바이너리로 파싱해야 인코딩을 feedparser가 올바르게 감지
                 parsed = feedparser.parse(resp.content)
-                articles = _normalize_entries(parsed.entries[:max_per_feed], source_name)
+                articles = _normalize_entries(
+                    parsed.entries[:max_per_feed],
+                    source_name,
+                    source_type=source_type,
+                )
                 all_articles.extend(articles)
             except Exception as e:
                 logger.warning(f"[RSS] {source_name} 피드 수집 실패: {e}")
@@ -66,7 +80,11 @@ async def fetch_feeds(
     return all_articles
 
 
-def _normalize_entries(entries: list, source_name: str) -> list[dict]:
+def _normalize_entries(
+    entries: list,
+    source_name: str,
+    source_type: str = "domestic",
+) -> list[dict]:
     """feedparser 엔트리를 공통 포맷으로 변환"""
     articles = []
     for entry in entries:
@@ -79,7 +97,7 @@ def _normalize_entries(entries: list, source_name: str) -> list[dict]:
             "content": _extract_content(entry),
             "url": entry.get("link", ""),
             "source_name": source_name,
-            "source_type": "domestic",
+            "source_type": source_type,
             "source_api": "rss",
             "published_at": _parse_entry_date(entry),
         })
