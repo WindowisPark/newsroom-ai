@@ -80,8 +80,12 @@ async def collection_pipeline():
                 "count": len(analyses),
             })
 
-            # 속보 감지: importance_score >= 9.0 기사가 있으면 알림
-            breaking = [a for a in analyses if a.importance_score >= 9.0]
+            # 속보 감지: 높은 중요도(>=8.5) + 다수 매체(>=2곳) 공통 보도만 속보로 간주
+            # 단독 기사의 자극적 보도가 속보로 승격되는 오탐을 방지한다.
+            breaking = [
+                a for a in analyses
+                if a.importance_score >= 8.5 and getattr(a, "_source_count", 1) >= 2
+            ]
             if breaking:
                 broadcast_event("breaking_alert", {
                     "count": len(breaking),

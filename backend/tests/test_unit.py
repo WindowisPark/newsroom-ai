@@ -213,3 +213,134 @@ class TestSchemas:
         req = HeadlineRequest(topic="경제 위기", article_ids=[uuid.uuid4()], style="analytical")
         assert req.topic == "경제 위기"
         assert req.style == "analytical"
+
+
+# ── LLM 출력 스키마 검증 ──
+
+class TestClassificationOut:
+    """ClassificationOut 검증"""
+
+    def test_정상_응답_통과(self):
+        from backend.analyzers.schemas import ClassificationOut
+        out = ClassificationOut.model_validate({
+            "category": "politics",
+            "keywords": ["민주당", "개혁법"],
+            "entities": [{"name": "이재명", "type": "person"}],
+            "sentiment": "neutral",
+            "importance_score": 8.5,
+        })
+        assert out.category == "politics"
+        assert out.importance_score == 8.5
+
+    def test_잘못된_카테고리_거부(self):
+        import pytest
+        from pydantic import ValidationError
+        from backend.analyzers.schemas import ClassificationOut
+        with pytest.raises(ValidationError):
+            ClassificationOut.model_validate({
+                "category": "invalid_cat",
+                "keywords": ["a"],
+                "sentiment": "neutral",
+                "importance_score": 5.0,
+            })
+
+    def test_중요도_범위_초과_거부(self):
+        import pytest
+        from pydantic import ValidationError
+        from backend.analyzers.schemas import ClassificationOut
+        with pytest.raises(ValidationError):
+            ClassificationOut.model_validate({
+                "category": "politics",
+                "keywords": ["a"],
+                "sentiment": "neutral",
+                "importance_score": 11.0,
+            })
+
+    def test_문자열_중요도_거부(self):
+        import pytest
+        from pydantic import ValidationError
+        from backend.analyzers.schemas import ClassificationOut
+        with pytest.raises(ValidationError):
+            ClassificationOut.model_validate({
+                "category": "politics",
+                "keywords": ["a"],
+                "sentiment": "neutral",
+                "importance_score": "high",
+            })
+
+    def test_빈_키워드_제거(self):
+        from backend.analyzers.schemas import ClassificationOut
+        out = ClassificationOut.model_validate({
+            "category": "tech",
+            "keywords": ["AI", "", "  "],
+            "sentiment": "neutral",
+            "importance_score": 6.0,
+        })
+        assert out.keywords == ["AI"]
+
+
+# ── Agenda: 제목 경계 매칭 ──
+
+class TestTitleContains:
+    """agenda._title_contains 단위 테스트 - substring 오탐 방지"""
+
+    def setup_method(self):
+        from backend.analyzers.agenda import _title_contains
+        self.match = _title_contains
+
+    def test_짧은_한글_키워드_substring_매칭_금지(self):
+        # '정' 이 '정치개혁법' 을 매칭하면 안 됨
+        assert self.match("정치개혁법 국회 통과", "정") is False
+
+    def test_두자_한글_키워드_여전히_거부(self):
+        # '정치' 도 2자이므로 substring fallback 에서 거부되어야 함
+        # (analysis.keywords 교집합에서는 정확 매칭 가능)
+        assert self.match("정치개혁법 국회 통과", "정치") is False
+
+    def test_세자_한글_키워드_허용(self):
+        assert self.match("정치개혁법 국회 통과", "정치개혁") is True
+
+    def test_긴_한글_키워드_허용(self):
+        assert self.match("광역 비례대표 확대 법안", "광역 비례대표") is True
+
+    def test_영문_경계_매칭(self):
+        # "AI" 는 "AI 혁신" 에서 매칭
+        assert self.match("AI 혁신 사례", "AI") is True
+        # 하지만 "TRAINED" 의 일부는 아님
+        assert self.match("TRAINED 모델 공개", "AI") is False
+
+    def test_숫자_경계_매칭(self):
+        assert self.match("2026 대선 전망", "2026") is True
+        # "20260" 같은 경우는 매칭하지 않아야 함
+        assert self.match("인구 20260명 돌파", "2026") is False
+
+    def test_빈_키워드(self):
+        assert self.match("아무 제목", "") is False
+
+
+# ── Classifier: 본문 절단 ──
+
+class TestTruncateContent:
+    """classifier._truncate_content 단위 테스트"""
+
+    def setup_method(self):
+        from backend.analyzers.classifier import _truncate_content
+        self.trunc = _truncate_content
+
+    def test_짧은_본문은_그대로(self):
+        assert self.trunc("짧은 본문", limit=1000) == "짧은 본문"
+
+    def test_긴_본문은_머리_꼬리_유지(self):
+        content = "A" * 600 + "M" * 200 + "Z" * 600
+        result = self.trunc(content, limit=1000)
+        # 앞 600자 A, 중간 생략, 뒤 400자 포함 (마지막 400자에는 M 끝 + Z 600)
+        assert result.startswith("A" * 600)
+        assert result.endswith("Z" * 400)
+        assert "…" in result
+        # 전체는 원본보다 짧지만 limit+구분자 이내
+        assert len(result) <= 1000 + 10
+
+    def test_경계_길이(self):
+        # limit 와 같은 길이는 그대로
+        content = "x" * 1000
+        assert self.trunc(content, limit=1000) == content

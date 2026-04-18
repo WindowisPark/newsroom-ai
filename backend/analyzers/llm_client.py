@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 # Haiku 4.5: 빠르고 저렴. 구조화 JSON 출력, 단순 분류/요약에 최적.
 # Sonnet 4.6: 다중 문서 교차 추론, 이중 언어 프레임 비교 등 복잡 분석에 사용.
 HAIKU_MODEL = "claude-haiku-4-5-20251001"
-SONNET_MODEL = "claude-sonnet-4-20250514"
+SONNET_MODEL = "claude-sonnet-4-6"
 
 # 작업별 모델 매핑 — 각 파이프라인 단계의 복잡도에 맞춰 배치
 MODEL_FOR = {

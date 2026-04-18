@@ -5,6 +5,7 @@
 """
 
 import logging
+import re
 from collections import Counter
 from datetime import date, datetime, timezone
 
@@ -12,6 +13,7 @@ from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.analyzers.llm_client import MODEL_FOR, call_llm
+from backend.analyzers.schemas import AgendaOut
 from backend.database.models import Article, ArticleAnalysis, AgendaReport
 from backend.prompts import AGENDA_SYSTEM
 
@@ -62,21 +64,23 @@ async def analyze_agenda(
         max_tokens=4096,
     )
 
-    content = llm_result["content"]
+    parsed = AgendaOut.model_validate(llm_result["content"])
 
     # 관련 기사 ID 매핑
-    top_issues = content.get("top_issues", [])
-    for issue in top_issues:
+    top_issues: list[dict] = []
+    for issue_model in parsed.top_issues:
+        issue = issue_model.model_dump()
         matched_ids = _match_article_ids(issue, rows)
         issue["related_article_ids"] = [str(aid) for aid in matched_ids]
         issue["article_count"] = len(matched_ids)
         issue["source_count"] = _count_sources(issue, rows)
+        top_issues.append(issue)
 
     # DB 저장
     report = AgendaReport(
         date=target_date,
         top_issues=top_issues,
-        analysis_summary=content.get("analysis_summary", ""),
+        analysis_summary=parsed.analysis_summary,
         generated_at=datetime.now(timezone.utc),
         model_used=llm_result["model_used"],
         prompt_tokens=llm_result["prompt_tokens"],
@@ -146,6 +150,23 @@ def _build_articles_summary(rows: list) -> str:
     return "\n".join(lines)
 
 
+def _title_contains(title: str, kw: str) -> bool:
+    """제목에 키워드가 '의미 있게' 포함되는지 판정.
+
+    원래 코드는 `kw in title` 로 단순 substring 매칭이라 "정" 이 "정치/정부/정책" 을
+    모두 매치하여 article_count / source_count 가 부풀려지는 문제가 있었다.
+    -   영숫자 키워드 ("AI", "IT", "2026"): 단어 경계 매칭
+    -   한글 키워드: 3자 이상만 substring 매칭 (2자 이하는 analysis.keywords 교집합만 허용)
+    """
+    if not kw:
+        return False
+    if kw.isascii():
+        return bool(re.search(rf"(?<![A-Za-z0-9]){re.escape(kw)}(?![A-Za-z0-9])", title))
+    if len(kw) < 3:
+        return False
+    return kw in title
+
+
 def _match_article_ids(issue: dict, rows: list) -> list:
     """이슈 키워드와 매칭되는 기사 ID 추출 (키워드 + 분석 키워드 교차 매칭)"""
     issue_keywords = set(issue.get("key_keywords", []))
@@ -159,9 +180,9 @@ def _match_article_ids(issue: dict, rows: list) -> list:
         if issue_keywords & article_keywords:
             matched.append(article.id)
             continue
-        # fallback: 제목에 키워드 포함 여부 (2글자 이상 키워드만)
+        # fallback: 제목 경계 매칭 (한글 ≥3자 또는 영숫자 단어 경계)
         title = article.title
-        if any(kw in title for kw in issue_keywords if len(kw) >= 2):
+        if any(_title_contains(title, kw) for kw in issue_keywords):
             matched.append(article.id)
 
     return matched[:10]
@@ -178,7 +199,7 @@ def _count_sources(issue: dict, rows: list) -> int:
         article_keywords = set(analysis.keywords)
         if issue_keywords & article_keywords:
             sources.add(article.source_name)
-        elif any(kw in article.title for kw in issue_keywords if len(kw) >= 2):
+        elif any(_title_contains(article.title, kw) for kw in issue_keywords):
             sources.add(article.source_name)
 
     return len(sources)
