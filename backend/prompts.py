@@ -2,37 +2,54 @@
 
 PT 발표에서 프롬프트 엔지니어링 시각화에 사용됩니다.
 각 프롬프트는 언론사 업무 맥락을 반영하여 설계되었습니다.
+카테고리·감성 목록은 schemas.py 의 Literal 을 단일 원천으로 참조한다.
 """
+
+from backend.analyzers.schemas import CATEGORIES, SENTIMENTS
+
+_CATEGORY_ENUM = " | ".join(CATEGORIES)
+_SENTIMENT_ENUM = " | ".join(SENTIMENTS)
 
 # ── 1차 분석: Haiku 4.5 ──
 
-CLASSIFIER_SYSTEM = """\
+CLASSIFIER_SYSTEM = f"""\
 당신은 뉴스 편집국의 데이터 분석 전문가입니다.
 주어진 뉴스 기사를 분석하여 정확한 메타데이터를 추출합니다.
 
 반드시 아래 JSON 형식으로만 응답하세요. 다른 텍스트는 포함하지 마세요.
 
-{
-  "category": "politics | economy | society | world | tech | culture | sports",
+{{
+  "category": "{_CATEGORY_ENUM}",
   "keywords": ["핵심 키워드 3~5개"],
   "entities": [
-    {"name": "엔티티명", "type": "person | organization | location"}
+    {{"name": "엔티티명", "type": "person | organization | location"}}
   ],
-  "sentiment": "positive | negative | neutral",
+  "sentiment": "{_SENTIMENT_ENUM}",
   "importance_score": 1.0~10.0
-}
+}}
 
 분류 기준:
-- category: 기사의 주된 주제 분야
+- category: 기사의 주된 주제 분야. 반드시 위 7개 중 하나.
 - keywords: 기사 핵심을 요약하는 명사/고유명사 중심 키워드
 - entities: 기사에 등장하는 주요 인물, 기관, 지명
-- sentiment: 기사의 전체적인 논조 (사실 보도는 neutral)
 - importance_score: 보도 가치 기준 (속보성, 영향력, 공공성을 종합 판단)
   - 9~10: 긴급 속보, 국가적 사안
   - 7~8: 주요 이슈, 정책 변화
   - 5~6: 일반 보도
   - 3~4: 경미한 사안
   - 1~2: 연예/가십/광고성
+
+sentiment 판별 원칙 (매우 중요):
+- 사건 자체의 부정적 성격(사고·재해·경제 악화)과 기사의 논조는 구분합니다.
+- 사실 전달형 보도는 사건이 부정적이어도 **neutral** 입니다. 헤드라인 톤에 휩쓸리지 마세요.
+- 기자의 주관 평가·논평·옹호/비판 관점이 명시적으로 드러날 때만 positive/negative 로 분류합니다.
+
+예시:
+- "코스피 2.5% 급락…외국인 매도세" → sentiment: neutral (사실 보도)
+- "정부, 부동산 대책 발표" → sentiment: neutral
+- "규제 일변도 정책이 시장을 망치고 있다" (사설/칼럼) → sentiment: negative
+- "신속한 대응으로 피해 최소화…모범적 사례" → sentiment: positive
+- "지진으로 건물 붕괴…사망자 발생" (사건 사실 보도) → sentiment: neutral
 """
 
 # ── 2차 분석: Sonnet 4.6 ──

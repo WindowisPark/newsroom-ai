@@ -2,9 +2,13 @@
 
 call_llm이 반환한 JSON을 이 모델로 validate하여 타입/범위/enum을
 조기에 강제한다. 실패 시 ValidationError → 호출부가 기존 예외 경로로 처리.
+
+`Category` / `Sentiment` / `EntityType` / `Trend` Literal 은 파이프라인 전역의
+단일 진실 원천. 프롬프트 문구와 프론트 필터 라벨도 이 목록에 맞추어야 한다.
+추가/변경 시: get_args(Category) 로 런타임 조회하는 곳들도 함께 갱신됨.
 """
 
-from typing import Literal
+from typing import Literal, get_args
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -13,6 +17,9 @@ Category = Literal["politics", "economy", "society", "world", "tech", "culture",
 Sentiment = Literal["positive", "negative", "neutral"]
 EntityType = Literal["person", "organization", "location"]
 Trend = Literal["rising", "stable", "falling"]
+
+CATEGORIES: tuple[str, ...] = get_args(Category)
+SENTIMENTS: tuple[str, ...] = get_args(Sentiment)
 
 
 class EntityOut(BaseModel):
