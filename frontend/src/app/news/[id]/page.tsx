@@ -18,6 +18,8 @@ import {
 } from "lucide-react";
 import { getNewsDetail } from "@/lib/api";
 import type { Article } from "@/lib/types";
+import { CopyButton } from "@/components/copy-button";
+import { DraftDialog } from "@/components/draft-dialog";
 
 const categoryLabel: Record<string, string> = {
   politics: "정치", economy: "경제", society: "사회",
@@ -33,6 +35,19 @@ const entityIcon: Record<string, typeof User> = {
   organization: Building2,
   location: MapPin,
 };
+
+function buildArticleSnippet(article: Article): string {
+  const pub = article.published_at
+    ? new Date(article.published_at).toLocaleString("ko-KR")
+    : "발행일 미상";
+  const lines = [
+    article.title,
+    `${article.source_name} · ${pub}`,
+  ];
+  if (article.description) lines.push("", article.description);
+  lines.push("", article.url);
+  return lines.join("\n");
+}
 
 export default function NewsDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
@@ -102,6 +117,18 @@ export default function NewsDetailPage({ params }: { params: Promise<{ id: strin
           >
             원문 보기 <ExternalLink className="size-3" />
           </a>
+        </div>
+        <div className="mt-4 flex flex-wrap items-center gap-2">
+          <CopyButton
+            value={buildArticleSnippet(article)}
+            label="복사"
+            variant="outline"
+          />
+          <DraftDialog
+            articleIds={[article.id]}
+            topicHint={article.title}
+            triggerLabel="이 기사로 초안 작성"
+          />
         </div>
       </div>
 

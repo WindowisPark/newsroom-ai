@@ -20,6 +20,7 @@ import {
 import { getNews, getAgenda, getDashboardStats } from "@/lib/api";
 import { useSSE } from "@/lib/use-sse";
 import type { Article, AgendaData } from "@/lib/types";
+import { CopyButton } from "@/components/copy-button";
 
 const categoryLabel: Record<string, string> = {
   politics: "정치", economy: "경제", society: "사회",
@@ -307,7 +308,7 @@ export default function DashboardPage() {
                       <span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-primary text-xs font-bold text-primary-foreground">
                         {issue.rank}
                       </span>
-                      <div className="min-w-0">
+                      <div className="min-w-0 flex-1">
                         <p className="font-medium text-sm leading-snug line-clamp-1">{issue.topic}</p>
                         <p className="mt-0.5 text-xs text-muted-foreground line-clamp-2">{issue.summary}</p>
                         <div className="mt-1.5 flex items-center gap-2">
@@ -318,6 +319,13 @@ export default function DashboardPage() {
                             중요도 {issue.importance_score.toFixed(1)}
                           </span>
                         </div>
+                      </div>
+                      <div className="flex items-center gap-1 shrink-0">
+                        <CopyButton
+                          value={`${issue.rank}. ${issue.topic}\n${issue.summary}\n(매체 ${issue.source_count}곳 · 기사 ${issue.article_count}건)`}
+                          size="icon"
+                          label="복사"
+                        />
                       </div>
                     </div>
                   </CardContent>

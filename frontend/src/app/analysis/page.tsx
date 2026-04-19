@@ -28,6 +28,8 @@ import {
   ResponsiveContainer,
   Legend,
 } from "recharts";
+import { CopyButton } from "@/components/copy-button";
+import { DraftDialog } from "@/components/draft-dialog";
 import { getAgenda, getPerspective, getTrends } from "@/lib/api";
 import type { AgendaData, PerspectiveData, TrendData } from "@/lib/types";
 
@@ -131,6 +133,22 @@ function AgendaTab() {
                       <span>기사 {issue.article_count}건</span>
                       <span>매체 {issue.source_count}곳</span>
                       <span>중요도 {issue.importance_score.toFixed(1)}</span>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2 pt-1">
+                      <CopyButton
+                        value={`${issue.rank}. ${issue.topic}\n${issue.summary}\n(매체 ${issue.source_count}곳 · 기사 ${issue.article_count}건)`}
+                        size="sm"
+                        label="복사"
+                        variant="ghost"
+                      />
+                      {issue.related_article_ids.length > 0 && (
+                        <DraftDialog
+                          articleIds={issue.related_article_ids}
+                          topicHint={issue.topic}
+                          triggerLabel="이 이슈로 초안 작성"
+                          triggerVariant="outline"
+                        />
+                      )}
                     </div>
                   </div>
                 </div>

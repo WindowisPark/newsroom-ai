@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useCallback } from "react";
-import { Bell, X, Newspaper, BarChart3, FileText, AlertTriangle } from "lucide-react";
+import { Bell, X, Newspaper, BarChart3, FileText, AlertTriangle, Bookmark } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useSSE } from "@/lib/use-sse";
 
@@ -17,6 +17,7 @@ const eventConfig: Record<string, { icon: typeof Bell; label: string }> = {
   analysis_complete: { icon: BarChart3, label: "분석 완료" },
   report_generated: { icon: FileText, label: "리포트 생성" },
   breaking_alert: { icon: AlertTriangle, label: "속보 감지" },
+  watchlist_match: { icon: Bookmark, label: "워치리스트 매칭" },
 };
 
 export function Notifications() {
@@ -34,6 +35,8 @@ export function Notifications() {
       message = `${reportType} 리포트가 자동 생성되었습니다.`;
     } else if (type === "breaking_alert") {
       message = `속보 ${data.count ?? 0}건 감지: ${(data.titles as string[])?.[0] ?? ""}`;
+    } else if (type === "watchlist_match") {
+      message = `워치리스트 매칭: "${data.keyword ?? ""}" → ${data.article_title ?? ""}`;
     } else {
       message = `${type} 이벤트 발생`;
     }

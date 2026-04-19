@@ -16,8 +16,10 @@ import {
   Lightbulb,
   CalendarDays,
 } from "lucide-react";
-import { recommendHeadlines, getTimeline } from "@/lib/api";
+import { recommendHeadlines, getTimeline, getNews } from "@/lib/api";
 import type { HeadlineData, TimelineData } from "@/lib/types";
+import { CopyButton } from "@/components/copy-button";
+import { DraftDialog } from "@/components/draft-dialog";
 
 export default function HeadlinesPage() {
   return (
@@ -40,6 +42,7 @@ function HeadlinesTab() {
   const [topic, setTopic] = useState("");
   const [style, setStyle] = useState("neutral");
   const [data, setData] = useState<HeadlineData | null>(null);
+  const [relatedArticleIds, setRelatedArticleIds] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -49,8 +52,13 @@ function HeadlinesTab() {
     setLoading(true);
     setError(null);
     try {
-      const res = await recommendHeadlines(topic, [], style);
-      setData(res.data);
+      // 헤드라인 추천 + 관련 기사 ID 병렬 조회 (초안 작성 연결용)
+      const [headlineRes, newsRes] = await Promise.all([
+        recommendHeadlines(topic, [], style),
+        getNews({ q: topic, limit: "5" }),
+      ]);
+      setData(headlineRes.data);
+      setRelatedArticleIds(newsRes.data.map((a) => a.id));
     } catch {
       setError("헤드라인 추천에 실패했습니다.");
     } finally {
@@ -106,12 +114,23 @@ function HeadlinesTab() {
                   <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-amber-100 text-sm font-bold text-amber-700">
                     {i + 1}
                   </span>
-                  <div className="space-y-2">
+                  <div className="flex-1 space-y-2">
                     <p className="text-base font-semibold">{item.headline}</p>
                     <p className="text-sm text-muted-foreground">{item.reason}</p>
-                    <Badge variant="outline" className="text-xs">
-                      {toneLabel[item.tone] || item.tone}
-                    </Badge>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Badge variant="outline" className="text-xs">
+                        {toneLabel[item.tone] || item.tone}
+                      </Badge>
+                      <CopyButton value={item.headline} size="icon" label="제목 복사" />
+                      {relatedArticleIds.length > 0 && (
+                        <DraftDialog
+                          articleIds={relatedArticleIds}
+                          topicHint={item.headline}
+                          triggerLabel="이 제목으로 초안"
+                          triggerVariant="outline"
+                        />
+                      )}
+                    </div>
                   </div>
                 </div>
               </CardContent>

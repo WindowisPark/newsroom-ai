@@ -13,14 +13,48 @@ import {
   Cpu,
   AlertCircle,
   Sparkles,
+  Mail,
 } from "lucide-react";
 import { getBriefing, generateBriefing } from "@/lib/api";
 import type { BriefingData } from "@/lib/types";
+import { CopyButton } from "@/components/copy-button";
 
 const categoryLabel: Record<string, string> = {
   politics: "정치", economy: "경제", society: "사회",
   world: "국제", tech: "기술", culture: "문화", sports: "스포츠",
 };
+
+function buildBriefingMarkdown(data: BriefingData): string {
+  const { briefing } = data;
+  const parts: string[] = [];
+  parts.push(`# ${briefing.headline}`);
+  parts.push("");
+  parts.push(`> 생성: ${data.generated_at} · 모델: ${data.model_used}`);
+  parts.push("");
+  parts.push(briefing.summary);
+  for (const section of briefing.sections) {
+    parts.push("");
+    parts.push(`## ${section.title} (${categoryLabel[section.category] || section.category})`);
+    parts.push(section.content);
+  }
+  return parts.join("\n");
+}
+
+function buildMailtoUrl(data: BriefingData): string {
+  const { briefing } = data;
+  const subject = `[뉴스 브리핑] ${briefing.headline}`;
+  const bodyLines = [
+    briefing.headline,
+    "",
+    briefing.summary,
+    "",
+    "[섹션]",
+    ...briefing.sections.map((s) => `- ${s.title} (${categoryLabel[s.category] || s.category})`),
+    "",
+    "상세는 사내 대시보드에서 확인하세요.",
+  ];
+  return `mailto:?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(bodyLines.join("\n"))}`;
+}
 
 export default function ReportsPage() {
   const [data, setData] = useState<BriefingData | null>(null);
@@ -114,6 +148,22 @@ export default function ReportsPage() {
             <span>토큰: {data.prompt_tokens + data.completion_tokens}</span>
           </div>
 
+          {/* Export actions */}
+          <div className="flex flex-wrap gap-2">
+            <CopyButton
+              value={buildBriefingMarkdown(data)}
+              label="마크다운 전체 복사"
+              variant="outline"
+            />
+            <a
+              href={buildMailtoUrl(data)}
+              className="inline-flex h-7 items-center gap-1 rounded-[min(var(--radius-md),12px)] border border-border bg-background px-2.5 text-[0.8rem] font-medium hover:bg-muted transition-colors"
+            >
+              <Mail className="size-3.5" />
+              메일로 보내기
+            </a>
+          </div>
+
           {/* Headline */}
           <Card>
             <CardHeader>
@@ -130,11 +180,18 @@ export default function ReportsPage() {
           {data.briefing.sections.map((section, i) => (
             <Card key={i}>
               <CardHeader>
-                <div className="flex items-center gap-2">
-                  <Badge variant="secondary">
-                    {categoryLabel[section.category] || section.category}
-                  </Badge>
-                  <CardTitle className="text-base">{section.title}</CardTitle>
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <Badge variant="secondary">
+                      {categoryLabel[section.category] || section.category}
+                    </Badge>
+                    <CardTitle className="text-base">{section.title}</CardTitle>
+                  </div>
+                  <CopyButton
+                    value={`## ${section.title}\n${section.content}`}
+                    size="icon"
+                    label="섹션 복사"
+                  />
                 </div>
               </CardHeader>
               <CardContent>

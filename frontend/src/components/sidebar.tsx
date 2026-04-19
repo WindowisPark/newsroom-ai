@@ -9,6 +9,7 @@ import {
   PenTool,
   LayoutDashboard,
   Activity,
+  Bookmark,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -18,6 +19,7 @@ const navItems = [
   { href: "/analysis", label: "분석", icon: BarChart3 },
   { href: "/reports", label: "리포트", icon: FileText },
   { href: "/headlines", label: "기사 작성", icon: PenTool },
+  { href: "/watchlist", label: "워치리스트", icon: Bookmark },
   { href: "/system", label: "시스템", icon: Activity },
 ];
 
