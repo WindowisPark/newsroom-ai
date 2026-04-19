@@ -388,6 +388,12 @@ data: { "type": "agenda", "date": "2026-04-16" }
 
 event: report_generated
 data: { "type": "briefing", "id": "uuid" }
+
+event: breaking_alert
+data: { "count": 2, "titles": ["속보 제목 1", "속보 제목 2"] }
+
+event: watchlist_match
+data: { "keyword": "호르무즈", "article_id": "uuid", "article_title": "..." }
 ```
 
 ---
@@ -428,6 +434,138 @@ GET /system/scheduler
   }
 }
 ```
+
+---
+
+## 7. 기사 초안 작성 (Drafts)
+
+### 7-1. 초안 생성
+```
+POST /drafts/generate
+```
+
+**Request Body:**
+```json
+{
+  "article_ids": ["uuid1", "uuid2"],
+  "style": "straight",
+  "topic_hint": "호르무즈 해협 개방"
+}
+```
+
+| 필드 | 타입 | 필수 | 설명 |
+|------|------|------|------|
+| article_ids | UUID[] | Y | 초안에 참조할 기사 ID (1개 이상) |
+| style | string | N | `straight` (기본) / `analysis` / `feature` |
+| topic_hint | string | N | 진입점 컨텍스트 (예: 선택한 헤드라인) |
+
+**Response:**
+```json
+{
+  "status": "success",
+  "data": {
+    "title_candidates": ["제목 1안", "제목 2안", "제목 3안"],
+    "lead": "리드 문단 (2~3문장)",
+    "body": "본문 Markdown 텍스트",
+    "background": "맥락·배경 설명 (~300자)",
+    "six_w_check": {
+      "who": "이해 관계자",
+      "when": "2026-04-19",
+      "where": "호르무즈 해협",
+      "what": "봉쇄 해제",
+      "how": "이란 발표",
+      "why": null
+    },
+    "sources": [
+      { "name": "연합뉴스", "url": "https://..." },
+      { "name": "BBC", "url": "https://..." }
+    ],
+    "model_used": "claude-sonnet-4-6",
+    "prompt_tokens": 1234,
+    "completion_tokens": 567,
+    "generated_at": "2026-04-19T12:00:00Z"
+  }
+}
+```
+
+**Error Responses:**
+- `400` — `article_ids` 가 빈 배열
+- `404` — `article_ids` 중 존재하지 않는 기사가 있음
+- `500` — LLM 응답 스키마 검증 실패 (`DraftOut`)
+
+**참고**: 저장하지 않음(stateless). 기자가 모달에서 바로 복사해 사용.
+
+---
+
+## 8. 워치리스트 (Watchlist)
+
+### 8-1. 워치리스트 목록 조회
+```
+GET /watchlist
+```
+
+**Response:**
+```json
+{
+  "status": "success",
+  "data": [
+    {
+      "id": "uuid",
+      "keyword": "호르무즈",
+      "is_active": true,
+      "created_at": "2026-04-19T09:00:00Z",
+      "last_matched_at": "2026-04-19T11:30:00Z",
+      "match_count": 7
+    }
+  ]
+}
+```
+
+### 8-2. 워치리스트 항목 추가
+```
+POST /watchlist
+```
+
+**Request Body:**
+```json
+{ "keyword": "환율" }
+```
+
+**Response:** 생성된 항목 (위 스키마와 동일, `match_count: 0`, `last_matched_at: null`).
+
+**Error Responses:**
+- `409` — 키워드 중복
+- `422` — 빈 문자열 / 100자 초과
+
+### 8-3. 워치리스트 항목 활성/비활성 토글
+```
+PATCH /watchlist/{id}
+```
+
+**Request Body:**
+```json
+{ "is_active": false }
+```
+
+**Response:** 업데이트된 항목.
+
+**Error Responses:**
+- `404` — 존재하지 않는 id
+
+### 8-4. 워치리스트 항목 삭제
+```
+DELETE /watchlist/{id}
+```
+
+**Response:**
+```json
+{ "status": "success", "data": { "deleted": true } }
+```
+
+### 8-5. 매칭 동작 (참고)
+- 스케줄러가 매 수집 사이클마다 `classify_batch` 결과 각각에 대해 활성 워치리스트 키워드와 매칭 체크.
+- 매칭 기준: `keyword in analysis.keywords` (정확) OR `agenda._title_contains(title, keyword)` (한글 3자↑ / 영숫자 단어경계).
+- 매칭 시 `watchlist_match` SSE 이벤트 브로드캐스트 + `match_count` 증가, `last_matched_at` 갱신.
 
 ---
 
@@ -508,3 +646,15 @@ GET /system/scheduler
 | context_summary | TEXT | 맥락 요약 |
 | generated_at | TIMESTAMP | 생성 시각 |
 | model_used | VARCHAR(50) | 사용 모델명 |
+
+### watchlists
+| 컬럼 | 타입 | 설명 |
+|------|------|------|
+| id | UUID (PK) | 워치 항목 ID |
+| keyword | VARCHAR(100) UNIQUE | 추적 키워드 |
+| is_active | BOOLEAN | 활성 여부 (기본 true) |
+| created_at | TIMESTAMP | 생성 시각 |
+| last_matched_at | TIMESTAMP NULL | 최근 매칭 시각 |
+| match_count | INT | 누적 매칭 횟수 (기본 0) |
+
+**참고**: `Base.metadata.create_all` 이 서버 재기동 시 신규 테이블을 자동 생성한다 (기존 테이블은 영향 없음).
