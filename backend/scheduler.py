@@ -69,6 +69,7 @@ async def collection_pipeline():
             select(Article)
             .outerjoin(ArticleAnalysis)
             .where(ArticleAnalysis.id.is_(None))
+            .order_by(Article.collected_at.desc())  # 최신 기사 우선 분류
             .limit(30)  # 배치 크기 제한
         )
         if blocked_ids:

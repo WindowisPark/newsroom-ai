@@ -29,24 +29,37 @@ async def get_agenda(
     top_n: int = Query(5, ge=1, le=10),
     db: AsyncSession = Depends(get_db),
 ):
-    """의제 설정 분석 조회 (없으면 새로 생성)"""
+    """의제 설정 분석 조회 (없으면 새로 생성).
+
+    date 파라미터 미지정 시: 오늘 분석이 없으면 가장 최근 AgendaReport 를 반환.
+    이렇게 해야 새벽·재기동 직후처럼 오늘자 분석이 아직 없을 때도 기자가
+    대시보드에서 바로 직전 의제를 확인할 수 있다.
+    """
+    explicit_date = date_str is not None
     target_date = _parse_date(date_str)
 
-    # 기존 리포트 조회
+    # 해당 날짜의 가장 최신 리포트 조회
     stmt = (
         select(AgendaReport)
         .where(AgendaReport.date == target_date)
         .order_by(AgendaReport.generated_at.desc())
         .limit(1)
     )
-    result = await db.execute(stmt)
-    report = result.scalar_one_or_none()
+    report = (await db.execute(stmt)).scalar_one_or_none()
 
     if not report:
         try:
             report = await analyze_agenda(db, target_date, top_n)
-        except ValueError as e:
-            raise HTTPException(status_code=404, detail=str(e))
+        except ValueError:
+            # date 미지정 시 최신 리포트로 폴백 (명시 요청 시엔 404 유지)
+            if explicit_date:
+                raise HTTPException(status_code=404, detail="no agenda for given date")
+            fallback_stmt = (
+                select(AgendaReport).order_by(AgendaReport.date.desc()).limit(1)
+            )
+            report = (await db.execute(fallback_stmt)).scalar_one_or_none()
+            if not report:
+                raise HTTPException(status_code=404, detail="no agenda available yet")
 
     return APIResponse(data=AgendaOut(
         date=report.date,

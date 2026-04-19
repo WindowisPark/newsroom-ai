@@ -8,11 +8,41 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.analyzers.llm_client import MODEL_FOR, call_llm
-from backend.analyzers.schemas import ClassificationOut
+from backend.analyzers.schemas import CATEGORIES, ClassificationOut
 from backend.database.models import Article, ArticleAnalysis
 from backend.prompts import CLASSIFIER_SYSTEM
 
 logger = logging.getLogger(__name__)
+
+
+# Haiku 가 가끔 Literal 밖의 변이(science, technology, political 등)를 내놓는 것을
+# Pydantic 검증 전에 정규화. 매핑되지 않은 값은 그대로 두어 검증에서 실패시킨다.
+_CATEGORY_ALIASES = {
+    "science": "tech",
+    "sci": "tech",
+    "technology": "tech",
+    "it": "tech",
+    "political": "politics",
+    "politic": "politics",
+    "economic": "economy",
+    "business": "economy",
+    "finance": "economy",
+    "social": "society",
+    "world news": "world",
+    "international": "world",
+    "cultural": "culture",
+    "entertainment": "culture",
+    "sport": "sports",
+}
+
+
+def _normalize_category(raw: object) -> object:
+    if not isinstance(raw, str):
+        return raw
+    key = raw.strip().lower()
+    if key in CATEGORIES:
+        return key
+    return _CATEGORY_ALIASES.get(key, raw)
 
 
 # ── 실패 기사 차단 ──
@@ -76,7 +106,10 @@ async def classify_article(article: Article) -> dict:
 async def classify_and_save(article: Article, db: AsyncSession) -> ArticleAnalysis:
     """기사를 분류하고 DB에 저장"""
     result = await classify_article(article)
-    parsed = ClassificationOut.model_validate(result["content"])
+    content = result["content"]
+    if isinstance(content, dict) and "category" in content:
+        content["category"] = _normalize_category(content["category"])
+    parsed = ClassificationOut.model_validate(content)
 
     analysis = ArticleAnalysis(
         article_id=article.id,
@@ -124,8 +157,11 @@ async def classify_batch(
         if item is None:
             continue
         article, result = item
+        content = result["content"]
+        if isinstance(content, dict) and "category" in content:
+            content["category"] = _normalize_category(content["category"])
         try:
-            parsed = ClassificationOut.model_validate(result["content"])
+            parsed = ClassificationOut.model_validate(content)
         except Exception as e:
             logger.warning(f"스키마 검증 실패 [{article.id}] {article.title[:30]}: {e}")
             _record_failure(article.id)
