@@ -1,7 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { FileEdit, Loader2, BookOpen, ExternalLink, Sparkles } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { FileEdit, Loader2, BookOpen, ExternalLink, Sparkles, Send } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -14,7 +15,7 @@ import {
 } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
 import { CopyButton } from "@/components/copy-button";
-import { generateDraft } from "@/lib/api";
+import { generateDraft, createArticleDraft } from "@/lib/api";
 import type { DraftData, DraftStyle } from "@/lib/types";
 
 interface DraftDialogProps {
@@ -40,11 +41,44 @@ export function DraftDialog({
   triggerVariant = "default",
   disabled,
 }: DraftDialogProps) {
+  const router = useRouter();
   const [open, setOpen] = useState(false);
   const [style, setStyle] = useState<DraftStyle>("straight");
   const [loading, setLoading] = useState(false);
+  const [publishing, setPublishing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [draft, setDraft] = useState<DraftData | null>(null);
+
+  const handlePublishPreliminary = async () => {
+    if (!draft) return;
+    setPublishing(true);
+    setError(null);
+    try {
+      const title = draft.title_candidates[0] ?? "제목 미확정";
+      const res = await createArticleDraft({
+        title,
+        lead: draft.lead,
+        body: draft.body,
+        background: draft.background,
+        style,
+        topic_hint: topicHint,
+        six_w_check: draft.six_w_check,
+        sources: draft.sources,
+        references: draft.references,
+        background_sources: draft.background_sources,
+        style_anchor: draft.style_anchor,
+        origin_article_ids: articleIds,
+        model_used: draft.model_used,
+      });
+      const id = res.data.id;
+      setOpen(false);
+      router.push(`/newsroom/${id}`);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "예비 게시 실패");
+    } finally {
+      setPublishing(false);
+    }
+  };
 
   const handleGenerate = async () => {
     setLoading(true);
@@ -184,10 +218,11 @@ export function DraftDialog({
               <SixWList check={draft.six_w_check} />
             </section>
 
-            {/* RAG: 참고한 자사 기사 (투명 공개) */}
+            {/* RAG: 참고 자료 (투명 공개 — 인용 가능 + 맥락용 구분) */}
             <ReferencesPanel
               references={draft.references || []}
               anchor={draft.style_anchor || null}
+              backgroundSources={draft.background_sources || []}
             />
 
             {/* 출처 */}
@@ -253,6 +288,24 @@ export function DraftDialog({
               >
                 다시 생성
               </Button>
+              <Button
+                type="button"
+                onClick={handlePublishPreliminary}
+                disabled={publishing}
+                className="gap-1.5"
+              >
+                {publishing ? (
+                  <>
+                    <Loader2 className="size-4 animate-spin" />
+                    저장 중...
+                  </>
+                ) : (
+                  <>
+                    <Send className="size-3.5" />
+                    예비 기사로 게시
+                  </>
+                )}
+              </Button>
             </>
           )}
         </DialogFooter>
@@ -297,71 +350,121 @@ function SixWList({ check }: { check: DraftData["six_w_check"] }) {
 function ReferencesPanel({
   references,
   anchor,
+  backgroundSources,
 }: {
   references: DraftData["references"];
   anchor: DraftData["style_anchor"];
+  backgroundSources: DraftData["background_sources"];
 }) {
-  const nothing = references.length === 0 && !anchor;
+  const nothing =
+    references.length === 0 && !anchor && backgroundSources.length === 0;
   return (
-    <section>
-      <h3 className="text-sm font-semibold mb-2 flex items-center gap-1.5">
-        <BookOpen className="size-3.5" />
-        참고한 자사 기사
-        {references.length > 0 && (
-          <Badge variant="secondary" className="text-[10px]">
-            {references.length}건
-          </Badge>
+    <section className="space-y-3">
+      {/* 자사·통신사 (인용 가능) */}
+      <div>
+        <h3 className="text-sm font-semibold mb-2 flex items-center gap-1.5">
+          <BookOpen className="size-3.5" />
+          인용 가능 참고 자료
+          {references.length > 0 && (
+            <Badge variant="secondary" className="text-[10px]">
+              {references.length}건
+            </Badge>
+          )}
+        </h3>
+        {nothing ? (
+          <p className="rounded border border-dashed p-3 text-xs text-muted-foreground">
+            매칭된 참고 기사가 없어 입력 기사만으로 작성되었습니다.
+          </p>
+        ) : references.length === 0 ? (
+          <p className="text-xs text-muted-foreground">
+            자사/통신사 인용 원천 없음
+          </p>
+        ) : (
+          <div className="space-y-2">
+            {references.map((r, i) => (
+              <a
+                key={i}
+                href={r.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-start gap-2 rounded border p-2 text-sm hover:bg-muted transition-colors"
+              >
+                <Badge variant="outline" className="shrink-0 mt-0.5">
+                  R{i + 1}
+                </Badge>
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-1">
+                    <span className="font-medium truncate">{r.name}</span>
+                    <ExternalLink className="size-3 text-muted-foreground shrink-0" />
+                  </div>
+                  {r.published_at && (
+                    <div className="text-[11px] text-muted-foreground mt-0.5">
+                      발행 {new Date(r.published_at).toLocaleDateString("ko-KR")}
+                    </div>
+                  )}
+                  <div className="text-[11px] text-primary truncate mt-0.5">
+                    {r.url}
+                  </div>
+                </div>
+              </a>
+            ))}
+          </div>
         )}
-      </h3>
-      {nothing ? (
-        <p className="rounded border border-dashed p-3 text-xs text-muted-foreground">
-          매칭된 서울신문 자사 기사가 없어 참고 없이 작성되었습니다.
-        </p>
-      ) : (
-        <div className="space-y-2">
-          {references.map((r, i) => (
+      </div>
+
+      {/* 톤 샘플 */}
+      {anchor && (
+        <div className="flex items-start gap-2 rounded border border-dashed p-2 text-sm">
+          <Sparkles className="size-3.5 text-amber-500 mt-0.5 shrink-0" />
+          <div className="min-w-0 flex-1">
+            <div className="text-xs text-muted-foreground">
+              톤 샘플 (문체 참고 · 본문에 직접 사용하지 않음)
+            </div>
             <a
-              key={i}
-              href={r.url}
+              href={anchor.url}
               target="_blank"
               rel="noopener noreferrer"
-              className="flex items-start gap-2 rounded border p-2 text-sm hover:bg-muted transition-colors"
+              className="text-xs text-primary hover:underline truncate block"
             >
-              <Badge variant="outline" className="shrink-0 mt-0.5">
-                R{i + 1}
-              </Badge>
-              <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-1">
-                  <span className="font-medium truncate">{r.name}</span>
-                  <ExternalLink className="size-3 text-muted-foreground shrink-0" />
-                </div>
-                {r.published_at && (
-                  <div className="text-[11px] text-muted-foreground mt-0.5">
-                    발행 {new Date(r.published_at).toLocaleDateString("ko-KR")}
-                  </div>
-                )}
-                <div className="text-[11px] text-primary truncate mt-0.5">
-                  {r.url}
-                </div>
-              </div>
+              {anchor.url}
             </a>
-          ))}
-          {anchor && (
-            <div className="flex items-start gap-2 rounded border border-dashed p-2 text-sm">
-              <Sparkles className="size-3.5 text-amber-500 mt-0.5 shrink-0" />
-              <div className="min-w-0 flex-1">
-                <div className="text-xs text-muted-foreground">톤 샘플 (문체 참고)</div>
+          </div>
+        </div>
+      )}
+
+      {/* 경쟁 일간지 맥락 (인용 금지) */}
+      {backgroundSources.length > 0 && (
+        <div>
+          <h3 className="text-xs font-semibold mb-2 flex items-center gap-1.5 text-muted-foreground">
+            경쟁 일간지 맥락 (직접 인용하지 않음)
+            <Badge variant="outline" className="text-[10px]">
+              {backgroundSources.length}건
+            </Badge>
+          </h3>
+          <ul className="space-y-1">
+            {backgroundSources.map((b, i) => (
+              <li
+                key={i}
+                className="flex items-center gap-2 text-xs text-muted-foreground"
+              >
+                <Badge variant="outline" className="text-[10px] shrink-0">
+                  {b.name}
+                </Badge>
                 <a
-                  href={anchor.url}
+                  href={b.url}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="text-xs text-primary hover:underline truncate block"
+                  className="truncate hover:text-primary"
                 >
-                  {anchor.url}
+                  {b.url}
                 </a>
-              </div>
-            </div>
-          )}
+              </li>
+            ))}
+          </ul>
+          <p className="mt-1.5 text-[11px] text-muted-foreground">
+            ※ 국내 언론 관행상 경쟁 일간지는 본문에 매체명으로 인용하지 않습니다.
+            맥락 파악용으로만 참고.
+          </p>
         </div>
       )}
     </section>

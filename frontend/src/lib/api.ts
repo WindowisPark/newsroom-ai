@@ -13,6 +13,8 @@ import type {
   DraftData,
   DraftStyle,
   WatchlistItem,
+  ArticleDraftItem,
+  ArticleDraftStatus,
 } from "./types";
 
 const BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1";
@@ -146,6 +148,50 @@ export async function patchWatchlist(id: string, isActive: boolean) {
 
 export async function deleteWatchlist(id: string) {
   return fetchAPI<{ deleted: boolean }>(`/watchlist/${id}`, {
+    method: "DELETE",
+  });
+}
+
+// Article Drafts (예비 기사 / 편집실)
+export async function listArticleDrafts(status?: ArticleDraftStatus) {
+  const query = status ? `?status=${status}` : "";
+  return fetchAPI<ArticleDraftItem[]>(`/article-drafts${query}`);
+}
+
+export async function getArticleDraft(id: string) {
+  return fetchAPI<ArticleDraftItem>(`/article-drafts/${id}`);
+}
+
+export async function createArticleDraft(payload: Partial<ArticleDraftItem>) {
+  return fetchAPI<ArticleDraftItem>("/article-drafts", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function updateArticleDraft(
+  id: string,
+  patch: Partial<Pick<ArticleDraftItem, "title" | "lead" | "body" | "background" | "category">>
+) {
+  return fetchAPI<ArticleDraftItem>(`/article-drafts/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify(patch),
+  });
+}
+
+export async function transitionArticleDraft(
+  id: string,
+  to: ArticleDraftStatus,
+  note?: string
+) {
+  return fetchAPI<ArticleDraftItem>(`/article-drafts/${id}/transition`, {
+    method: "POST",
+    body: JSON.stringify({ to, note }),
+  });
+}
+
+export async function deleteArticleDraft(id: string) {
+  return fetchAPI<{ deleted: boolean }>(`/article-drafts/${id}`, {
     method: "DELETE",
   });
 }

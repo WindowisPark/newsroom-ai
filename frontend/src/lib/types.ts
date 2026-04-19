@@ -196,7 +196,8 @@ export interface DraftData {
   background: string;
   six_w_check: SixWCheck;
   sources: SourceRef[];
-  references: SourceRef[]; // RAG: 검색된 자사 참고 기사
+  references: SourceRef[]; // RAG: 자사·통신사 인용 가능 기사
+  background_sources: SourceRef[]; // 경쟁 일간지 — 맥락 파악용, 직접 인용 금지
   style_anchor: SourceRef | null; // 톤 샘플 1건
   model_used: string;
   prompt_tokens: number;
@@ -213,4 +214,36 @@ export interface WatchlistItem {
   created_at: string;
   last_matched_at: string | null;
   match_count: number;
+}
+
+// ── 예비 기사 (Article Draft) ──
+
+export type ArticleDraftStatus =
+  | "draft"
+  | "in_review"
+  | "approved"
+  | "rejected";
+
+export interface ArticleDraftItem {
+  id: string;
+  title: string;
+  lead: string;
+  body: string;
+  background: string;
+  category: string | null;
+  style: DraftStyle;
+  topic_hint: string | null;
+  six_w_check: SixWCheck;
+  sources: SourceRef[];
+  references: SourceRef[];
+  background_sources: SourceRef[];
+  style_anchor: SourceRef | null;
+  origin_article_ids: string[];
+  status: ArticleDraftStatus;
+  review_note: string | null;
+  model_used: string | null;
+  created_at: string;
+  updated_at: string;
+  submitted_at: string | null;
+  reviewed_at: string | null;
 }

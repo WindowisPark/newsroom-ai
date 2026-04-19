@@ -1,0 +1,497 @@
+"use client";
+
+import { use, useCallback, useEffect, useState } from "react";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Input } from "@/components/ui/input";
+import {
+  ArrowLeft,
+  Pencil,
+  Save,
+  X,
+  Send,
+  CheckCircle2,
+  XCircle,
+  Trash2,
+  Undo2,
+  AlertCircle,
+  ExternalLink,
+  Sparkles,
+  BookOpen,
+  Clock,
+  FileText,
+} from "lucide-react";
+
+import {
+  getArticleDraft,
+  updateArticleDraft,
+  transitionArticleDraft,
+  deleteArticleDraft,
+} from "@/lib/api";
+import type { ArticleDraftItem, ArticleDraftStatus } from "@/lib/types";
+import { CopyButton } from "@/components/copy-button";
+
+const categoryLabel: Record<string, string> = {
+  politics: "정치", economy: "경제", society: "사회",
+  world: "국제", tech: "기술", culture: "문화", sports: "스포츠",
+};
+
+const STATUS_META: Record<
+  ArticleDraftStatus,
+  { label: string; className: string }
+> = {
+  draft: { label: "초안", className: "bg-muted text-muted-foreground" },
+  in_review: { label: "결재 대기", className: "bg-amber-100 text-amber-800" },
+  approved: { label: "게시 완료", className: "bg-emerald-100 text-emerald-800" },
+  rejected: { label: "반려", className: "bg-destructive/10 text-destructive" },
+};
+
+export default function NewsroomDetailPage({
+  params,
+}: {
+  params: Promise<{ id: string }>;
+}) {
+  const { id } = use(params);
+  const router = useRouter();
+
+  const [item, setItem] = useState<ArticleDraftItem | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [editing, setEditing] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [draftTitle, setDraftTitle] = useState("");
+  const [draftLead, setDraftLead] = useState("");
+  const [draftBody, setDraftBody] = useState("");
+  const [draftBackground, setDraftBackground] = useState("");
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await getArticleDraft(id);
+      setItem(res.data);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "불러올 수 없습니다.");
+    } finally {
+      setLoading(false);
+    }
+  }, [id]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  const beginEdit = () => {
+    if (!item) return;
+    setDraftTitle(item.title);
+    setDraftLead(item.lead);
+    setDraftBody(item.body);
+    setDraftBackground(item.background || "");
+    setEditing(true);
+  };
+
+  const cancelEdit = () => {
+    setEditing(false);
+    setError(null);
+  };
+
+  const saveEdit = async () => {
+    if (!item) return;
+    setSaving(true);
+    setError(null);
+    try {
+      const res = await updateArticleDraft(item.id, {
+        title: draftTitle,
+        lead: draftLead,
+        body: draftBody,
+        background: draftBackground,
+      });
+      setItem(res.data);
+      setEditing(false);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "저장 실패");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const transition = async (to: ArticleDraftStatus, note?: string) => {
+    if (!item) return;
+    setError(null);
+    try {
+      const res = await transitionArticleDraft(item.id, to, note);
+      setItem(res.data);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "상태 변경 실패");
+    }
+  };
+
+  const handleSubmitReview = () => transition("in_review");
+  const handleApprove = () => transition("approved", "승인");
+  const handleReject = async () => {
+    const note = prompt("반려 사유를 입력하세요", "반려");
+    if (note === null) return;
+    await transition("rejected", note);
+  };
+  const handleBackToDraft = () => transition("draft", "재작성");
+
+  const handleDelete = async () => {
+    if (!item) return;
+    if (!confirm(`"${item.title}" 을(를) 삭제할까요?`)) return;
+    try {
+      await deleteArticleDraft(item.id);
+      router.push("/newsroom");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "삭제 실패");
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="mx-auto max-w-3xl space-y-4">
+        <Skeleton className="h-8 w-32" />
+        <Skeleton className="h-10 w-3/4" />
+        <Skeleton className="h-48 w-full rounded-xl" />
+      </div>
+    );
+  }
+
+  if (error && !item) {
+    return (
+      <div className="mx-auto max-w-3xl space-y-4">
+        <Link href="/newsroom">
+          <Button variant="ghost" size="sm">
+            <ArrowLeft className="size-4" /> 편집실
+          </Button>
+        </Link>
+        <p className="text-destructive">{error}</p>
+      </div>
+    );
+  }
+
+  if (!item) return null;
+
+  const meta = STATUS_META[item.status];
+  const canEdit = item.status === "draft" || item.status === "rejected";
+  const canSubmit = item.status === "draft";
+  const canApproveReject = item.status === "in_review";
+  const canRevertToDraft = item.status === "in_review" || item.status === "approved" || item.status === "rejected";
+
+  return (
+    <div className="mx-auto max-w-3xl space-y-6">
+      {/* Top bar */}
+      <div className="flex items-center justify-between">
+        <Link href="/newsroom">
+          <Button variant="ghost" size="sm">
+            <ArrowLeft className="size-4" /> 편집실
+          </Button>
+        </Link>
+        <Badge className={meta.className}>
+          <FileText className="size-3" />
+          <span className="ml-1">{meta.label}</span>
+        </Badge>
+      </div>
+
+      {error && (
+        <div className="flex items-center gap-2 rounded-lg border border-destructive/50 bg-destructive/10 p-3 text-sm text-destructive">
+          <AlertCircle className="size-4" />
+          {error}
+        </div>
+      )}
+
+      {/* Meta */}
+      <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
+        {item.category && (
+          <Badge variant="secondary">
+            {categoryLabel[item.category] || item.category}
+          </Badge>
+        )}
+        <span className="flex items-center gap-1">
+          <Clock className="size-3" />
+          업데이트 {new Date(item.updated_at).toLocaleString("ko-KR")}
+        </span>
+        {item.submitted_at && (
+          <span>결재 요청 {new Date(item.submitted_at).toLocaleString("ko-KR")}</span>
+        )}
+        {item.reviewed_at && (
+          <span>검토 {new Date(item.reviewed_at).toLocaleString("ko-KR")}</span>
+        )}
+        {item.model_used && <span>모델 {item.model_used}</span>}
+      </div>
+
+      {/* Actions */}
+      <div className="flex flex-wrap gap-2">
+        {canEdit && !editing && (
+          <Button size="sm" onClick={beginEdit} className="gap-1.5">
+            <Pencil className="size-3.5" />
+            편집
+          </Button>
+        )}
+        {editing && (
+          <>
+            <Button size="sm" onClick={saveEdit} disabled={saving} className="gap-1.5">
+              <Save className="size-3.5" />
+              {saving ? "저장 중..." : "저장"}
+            </Button>
+            <Button size="sm" variant="secondary" onClick={cancelEdit}>
+              <X className="size-3.5" />
+              취소
+            </Button>
+          </>
+        )}
+        {canSubmit && !editing && (
+          <Button size="sm" variant="outline" onClick={handleSubmitReview} className="gap-1.5">
+            <Send className="size-3.5" />
+            상급자 결재 요청
+          </Button>
+        )}
+        {canApproveReject && (
+          <>
+            <Button size="sm" onClick={handleApprove} className="gap-1.5">
+              <CheckCircle2 className="size-3.5" />
+              승인·게시
+            </Button>
+            <Button size="sm" variant="destructive" onClick={handleReject} className="gap-1.5">
+              <XCircle className="size-3.5" />
+              반려
+            </Button>
+          </>
+        )}
+        {canRevertToDraft && !editing && (
+          <Button size="sm" variant="outline" onClick={handleBackToDraft} className="gap-1.5">
+            <Undo2 className="size-3.5" />
+            초안으로 복귀
+          </Button>
+        )}
+        {!editing && (
+          <Button size="sm" variant="ghost" onClick={handleDelete} className="gap-1.5 ml-auto">
+            <Trash2 className="size-3.5 text-destructive" />
+            삭제
+          </Button>
+        )}
+      </div>
+
+      {/* Review note */}
+      {item.review_note && item.status !== "draft" && (
+        <Card className="border-amber-200 bg-amber-50/50">
+          <CardContent className="py-3">
+            <div className="text-xs font-medium text-amber-800 mb-1">검토 메모</div>
+            <p className="text-sm text-amber-900">{item.review_note}</p>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Article body — 신문 스타일 */}
+      <article className="rounded-xl border bg-card p-6 space-y-5">
+        <div className="border-b pb-4">
+          {editing ? (
+            <Input
+              value={draftTitle}
+              onChange={(e) => setDraftTitle(e.target.value)}
+              className="text-2xl font-bold h-auto py-2"
+              maxLength={300}
+            />
+          ) : (
+            <h1 className="text-2xl font-bold leading-tight tracking-tight">
+              {item.title}
+            </h1>
+          )}
+          <div className="mt-2 text-xs text-muted-foreground">
+            서울신문 편집국 · {new Date(item.created_at).toLocaleDateString("ko-KR")}
+          </div>
+        </div>
+
+        {/* Lead */}
+        <section>
+          <h2 className="text-xs font-semibold uppercase text-muted-foreground mb-1.5">
+            리드
+          </h2>
+          {editing ? (
+            <textarea
+              value={draftLead}
+              onChange={(e) => setDraftLead(e.target.value)}
+              className="w-full min-h-[80px] rounded border p-2 text-sm"
+            />
+          ) : (
+            <p className="text-base font-medium leading-relaxed">{item.lead}</p>
+          )}
+        </section>
+
+        {/* Body */}
+        <section>
+          <h2 className="text-xs font-semibold uppercase text-muted-foreground mb-1.5">
+            본문
+          </h2>
+          {editing ? (
+            <textarea
+              value={draftBody}
+              onChange={(e) => setDraftBody(e.target.value)}
+              className="w-full min-h-[240px] rounded border p-2 text-sm font-mono"
+            />
+          ) : (
+            <div className="prose prose-sm max-w-none whitespace-pre-wrap leading-relaxed">
+              {item.body}
+            </div>
+          )}
+        </section>
+
+        {/* Background */}
+        {(item.background || editing) && (
+          <section>
+            <h2 className="text-xs font-semibold uppercase text-muted-foreground mb-1.5">
+              맥락 · 배경
+            </h2>
+            {editing ? (
+              <textarea
+                value={draftBackground}
+                onChange={(e) => setDraftBackground(e.target.value)}
+                className="w-full min-h-[100px] rounded border p-2 text-sm"
+              />
+            ) : (
+              <p className="text-sm leading-relaxed text-muted-foreground whitespace-pre-wrap">
+                {item.background}
+              </p>
+            )}
+          </section>
+        )}
+
+        {/* Sources */}
+        {item.sources.length > 0 && (
+          <section className="border-t pt-4">
+            <h2 className="text-xs font-semibold uppercase text-muted-foreground mb-2">
+              출처
+            </h2>
+            <ul className="space-y-1 text-sm">
+              {item.sources.map((s, i) => (
+                <li key={i} className="flex items-center gap-2">
+                  <Badge variant="secondary" className="text-[10px]">
+                    {s.name}
+                  </Badge>
+                  <a
+                    href={s.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-primary hover:underline truncate text-xs"
+                  >
+                    {s.url}
+                  </a>
+                </li>
+              ))}
+            </ul>
+          </section>
+        )}
+      </article>
+
+      {/* Copy action */}
+      <div className="flex gap-2">
+        <CopyButton
+          value={buildMarkdown(item)}
+          label="Markdown 복사"
+          variant="outline"
+        />
+      </div>
+
+      {/* RAG transparency */}
+      {(item.references.length > 0 ||
+        item.background_sources.length > 0 ||
+        item.style_anchor) && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base flex items-center gap-2">
+              <BookOpen className="size-4" />
+              작성에 참고한 자료
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {item.references.length > 0 && (
+              <div>
+                <div className="text-xs font-semibold mb-1.5">인용 가능 참고</div>
+                <ul className="space-y-1">
+                  {item.references.map((r, i) => (
+                    <li key={i} className="flex items-center gap-2 text-sm">
+                      <Badge variant="outline" className="text-[10px]">R{i + 1}</Badge>
+                      <span className="font-medium">{r.name}</span>
+                      <a
+                        href={r.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-primary hover:underline truncate flex items-center gap-1 text-xs"
+                      >
+                        {r.url}
+                        <ExternalLink className="size-3" />
+                      </a>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            {item.style_anchor && (
+              <div className="flex items-start gap-2 rounded border border-dashed p-2 text-xs">
+                <Sparkles className="size-3.5 text-amber-500 mt-0.5 shrink-0" />
+                <div className="min-w-0 flex-1">
+                  <div className="text-muted-foreground">톤 샘플</div>
+                  <a
+                    href={item.style_anchor.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-primary hover:underline truncate block"
+                  >
+                    {item.style_anchor.url}
+                  </a>
+                </div>
+              </div>
+            )}
+            {item.background_sources.length > 0 && (
+              <div>
+                <div className="text-xs font-semibold mb-1.5 text-muted-foreground">
+                  경쟁 일간지 맥락 (직접 인용하지 않음)
+                </div>
+                <ul className="space-y-1">
+                  {item.background_sources.map((b, i) => (
+                    <li key={i} className="flex items-center gap-2 text-xs text-muted-foreground">
+                      <Badge variant="outline" className="text-[10px]">{b.name}</Badge>
+                      <a
+                        href={b.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="truncate hover:text-primary"
+                      >
+                        {b.url}
+                      </a>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
+    </div>
+  );
+}
+
+function buildMarkdown(item: ArticleDraftItem): string {
+  const parts: string[] = [];
+  parts.push(`# ${item.title}`);
+  parts.push("");
+  parts.push(`> 서울신문 편집국 · ${new Date(item.created_at).toLocaleDateString("ko-KR")} · 상태: ${item.status}`);
+  parts.push("");
+  parts.push(item.lead);
+  parts.push("");
+  parts.push(item.body);
+  if (item.background) {
+    parts.push("");
+    parts.push("## 맥락 · 배경");
+    parts.push(item.background);
+  }
+  if (item.sources.length > 0) {
+    parts.push("");
+    parts.push("## 출처");
+    parts.push(...item.sources.map((s) => `- ${s.name}: ${s.url}`));
+  }
+  return parts.join("\n");
+}
