@@ -224,6 +224,26 @@ export type ArticleDraftStatus =
   | "approved"
   | "rejected";
 
+export type FactIssueSeverity = "high" | "medium" | "low";
+export type FactIssueKind =
+  | "role_mismatch"
+  | "number_unsupported"
+  | "entity_unsupported"
+  | "entity_unknown";
+
+export interface FactIssue {
+  id: string;
+  severity: FactIssueSeverity;
+  kind: FactIssueKind;
+  claim: string;
+  evidence: string | null;
+  span_text: string | null;
+  acknowledged: boolean;
+  acknowledged_by: string | null;
+  acknowledged_at: string | null;
+  acknowledged_note: string | null;
+}
+
 export interface ArticleDraftItem {
   id: string;
   title: string;
@@ -241,6 +261,7 @@ export interface ArticleDraftItem {
   origin_article_ids: string[];
   status: ArticleDraftStatus;
   review_note: string | null;
+  fact_issues: FactIssue[];
   model_used: string | null;
   created_at: string;
   updated_at: string;

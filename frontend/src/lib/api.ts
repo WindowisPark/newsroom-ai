@@ -196,6 +196,20 @@ export async function deleteArticleDraft(id: string) {
   });
 }
 
+export async function acknowledgeFactIssue(
+  draftId: string,
+  issueId: string,
+  payload: { acknowledged: boolean; acknowledged_by?: string; note?: string }
+) {
+  return fetchAPI<ArticleDraftItem>(
+    `/article-drafts/${draftId}/fact-issues/${issueId}/acknowledge`,
+    {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }
+  );
+}
+
 // SSE
 export function createEventSource() {
   return new EventSource(`${BASE_URL}/sse/stream`);

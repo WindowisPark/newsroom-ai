@@ -31,9 +31,15 @@ import {
   updateArticleDraft,
   transitionArticleDraft,
   deleteArticleDraft,
+  acknowledgeFactIssue,
 } from "@/lib/api";
-import type { ArticleDraftItem, ArticleDraftStatus } from "@/lib/types";
+import type {
+  ArticleDraftItem,
+  ArticleDraftStatus,
+  FactIssue,
+} from "@/lib/types";
 import { CopyButton } from "@/components/copy-button";
+import { ShieldAlert, ShieldCheck, Bot } from "lucide-react";
 
 const categoryLabel: Record<string, string> = {
   politics: "정치", economy: "경제", society: "사회",
@@ -139,6 +145,23 @@ export default function NewsroomDetailPage({
   };
   const handleBackToDraft = () => transition("draft", "재작성");
 
+  const handleAckIssue = async (issue: FactIssue, acknowledged: boolean) => {
+    if (!item) return;
+    try {
+      const note = acknowledged
+        ? prompt("확인 메모 (선택)", "원문 확인 완료") ?? undefined
+        : undefined;
+      const res = await acknowledgeFactIssue(item.id, issue.id, {
+        acknowledged,
+        acknowledged_by: "편집자",
+        note,
+      });
+      setItem(res.data);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "확인 처리 실패");
+    }
+  };
+
   const handleDelete = async () => {
     if (!item) return;
     if (!confirm(`"${item.title}" 을(를) 삭제할까요?`)) return;
@@ -180,6 +203,11 @@ export default function NewsroomDetailPage({
   const canSubmit = item.status === "draft";
   const canApproveReject = item.status === "in_review";
   const canRevertToDraft = item.status === "in_review" || item.status === "approved" || item.status === "rejected";
+
+  const highIssues = item.fact_issues.filter((i) => i.severity === "high");
+  const unackHigh = highIssues.filter((i) => !i.acknowledged);
+  const totalAck = item.fact_issues.filter((i) => i.acknowledged).length;
+  const approveBlocked = canApproveReject && unackHigh.length > 0;
 
   return (
     <div className="mx-auto max-w-3xl space-y-6">
@@ -251,9 +279,20 @@ export default function NewsroomDetailPage({
         )}
         {canApproveReject && (
           <>
-            <Button size="sm" onClick={handleApprove} className="gap-1.5">
+            <Button
+              size="sm"
+              onClick={handleApprove}
+              className="gap-1.5"
+              disabled={approveBlocked}
+              title={
+                approveBlocked
+                  ? `미확인 팩트 경고 ${unackHigh.length}건을 먼저 확인하세요`
+                  : undefined
+              }
+            >
               <CheckCircle2 className="size-3.5" />
               승인·게시
+              {approveBlocked && ` (경고 ${unackHigh.length}건 미확인)`}
             </Button>
             <Button size="sm" variant="destructive" onClick={handleReject} className="gap-1.5">
               <XCircle className="size-3.5" />
@@ -275,6 +314,15 @@ export default function NewsroomDetailPage({
         )}
       </div>
 
+      {/* 자동 팩트 검증 — L2 + HITL ack */}
+      {item.fact_issues.length > 0 && (
+        <FactCheckCard
+          issues={item.fact_issues}
+          onAck={handleAckIssue}
+          totalAck={totalAck}
+        />
+      )}
+
       {/* Review note */}
       {item.review_note && item.status !== "draft" && (
         <Card className="border-amber-200 bg-amber-50/50">
@@ -287,6 +335,11 @@ export default function NewsroomDetailPage({
 
       {/* Article body — 신문 스타일 */}
       <article className="rounded-xl border bg-card p-6 space-y-5">
+        {/* AI 워터마크 */}
+        <div className="flex items-center gap-1.5 rounded bg-amber-50 px-2.5 py-1 text-xs text-amber-900 border border-amber-200 w-fit">
+          <Bot className="size-3.5" />
+          AI 초안 — 편집자 검증 전{item.status === "approved" ? " (AI 초안 기반)" : ""}
+        </div>
         <div className="border-b pb-4">
           {editing ? (
             <Input
@@ -471,6 +524,139 @@ export default function NewsroomDetailPage({
         </Card>
       )}
     </div>
+  );
+}
+
+function FactCheckCard({
+  issues,
+  onAck,
+  totalAck,
+}: {
+  issues: FactIssue[];
+  onAck: (issue: FactIssue, acknowledged: boolean) => void;
+  totalAck: number;
+}) {
+  const total = issues.length;
+  const severityOrder: Record<string, number> = { high: 0, medium: 1, low: 2 };
+  const sorted = [...issues].sort(
+    (a, b) => (severityOrder[a.severity] ?? 3) - (severityOrder[b.severity] ?? 3)
+  );
+  const kindLabel: Record<FactIssue["kind"], string> = {
+    role_mismatch: "직책 오류",
+    number_unsupported: "수치 미확인",
+    entity_unsupported: "엔티티 미확인",
+    entity_unknown: "미등재 인물",
+  };
+  const sevColor: Record<FactIssue["severity"], string> = {
+    high: "border-destructive/50 bg-destructive/5",
+    medium: "border-amber-300 bg-amber-50/50",
+    low: "border-muted bg-muted/20",
+  };
+  const sevBadgeColor: Record<FactIssue["severity"], string> = {
+    high: "bg-destructive/10 text-destructive",
+    medium: "bg-amber-100 text-amber-800",
+    low: "bg-muted text-muted-foreground",
+  };
+
+  const allAck = totalAck === total && total > 0;
+  const progressPct = total > 0 ? Math.round((totalAck / total) * 100) : 0;
+
+  return (
+    <Card className={allAck ? "border-emerald-300 bg-emerald-50/30" : ""}>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2 text-base">
+          {allAck ? (
+            <ShieldCheck className="size-5 text-emerald-600" />
+          ) : (
+            <ShieldAlert className="size-5 text-amber-600" />
+          )}
+          자동 팩트 검증
+          <Badge variant={allAck ? "default" : "outline"} className="text-[10px]">
+            {totalAck}/{total} 확인
+          </Badge>
+          {allAck && (
+            <span className="text-xs text-emerald-700 font-normal">
+              모두 검토 완료
+            </span>
+          )}
+        </CardTitle>
+        {/* 진행바 */}
+        <div className="h-1.5 w-full rounded-full bg-muted mt-2">
+          <div
+            className={`h-full rounded-full transition-all ${
+              allAck ? "bg-emerald-500" : "bg-amber-500"
+            }`}
+            style={{ width: `${progressPct}%` }}
+          />
+        </div>
+      </CardHeader>
+      <CardContent>
+        <ul className="space-y-2">
+          {sorted.map((issue) => (
+            <li
+              key={issue.id}
+              className={`rounded border p-3 ${sevColor[issue.severity]} ${
+                issue.acknowledged ? "opacity-60" : ""
+              }`}
+            >
+              <div className="flex items-start gap-2">
+                <Badge className={`text-[10px] ${sevBadgeColor[issue.severity]}`}>
+                  {issue.severity.toUpperCase()}
+                </Badge>
+                <div className="flex-1 min-w-0 space-y-1">
+                  <div className="text-xs text-muted-foreground">
+                    {kindLabel[issue.kind]}
+                  </div>
+                  <div className="font-medium text-sm">
+                    <span className="bg-yellow-100 px-1 rounded">
+                      {issue.claim}
+                    </span>
+                  </div>
+                  {issue.evidence && (
+                    <div className="text-xs text-muted-foreground">
+                      {issue.evidence}
+                    </div>
+                  )}
+                  {issue.span_text && (
+                    <div className="text-xs italic text-muted-foreground border-l-2 pl-2">
+                      “{issue.span_text}”
+                    </div>
+                  )}
+                  {issue.acknowledged && issue.acknowledged_note && (
+                    <div className="text-xs text-emerald-700">
+                      ✓ 확인 메모: {issue.acknowledged_note}
+                    </div>
+                  )}
+                </div>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant={issue.acknowledged ? "secondary" : "outline"}
+                  onClick={() => onAck(issue, !issue.acknowledged)}
+                  className="shrink-0 gap-1"
+                >
+                  {issue.acknowledged ? (
+                    <>
+                      <ShieldCheck className="size-3.5" />
+                      확인됨
+                    </>
+                  ) : (
+                    <>
+                      <ShieldAlert className="size-3.5" />
+                      확인
+                    </>
+                  )}
+                </Button>
+              </div>
+            </li>
+          ))}
+        </ul>
+        <p className="mt-3 text-[11px] text-muted-foreground">
+          ※ 자동 검증은 참고용입니다. 최종 판단은 편집자가 수행합니다.
+          HIGH 등급 경고가 모두 확인되어야 승인이 가능합니다.
+        </p>
+      </CardContent>
+    </Card>
   );
 }
 
