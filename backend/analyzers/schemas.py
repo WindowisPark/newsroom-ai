@@ -78,6 +78,7 @@ class SixWCheckOut(BaseModel):
 class SourceRef(BaseModel):
     name: str
     url: str
+    published_at: str | None = None  # recency 표시용 (ISO 문자열)
 
 
 class DraftOut(BaseModel):
@@ -88,6 +89,10 @@ class DraftOut(BaseModel):
     background: str = ""
     six_w_check: SixWCheckOut = Field(default_factory=SixWCheckOut)
     sources: list[SourceRef] = Field(default_factory=list)
+    # RAG: 검색된 자사 참고 기사(최대 3). 프론트에서 투명 공개.
+    references: list[SourceRef] = Field(default_factory=list)
+    # 톤 앵커 — 동일 카테고리 자사 기사 1건, 스타일 참고용 (few-shot anchor)
+    style_anchor: SourceRef | None = None
 
 
 # ── 워치리스트 ──
