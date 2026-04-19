@@ -14,10 +14,10 @@ import {
 import { cn } from "@/lib/utils";
 
 const navItems = [
+  { href: "/reports", label: "일일 브리핑", icon: FileText },
   { href: "/", label: "대시보드", icon: LayoutDashboard },
   { href: "/news", label: "뉴스", icon: Newspaper },
   { href: "/analysis", label: "분석", icon: BarChart3 },
-  { href: "/reports", label: "리포트", icon: FileText },
   { href: "/headlines", label: "기사 작성", icon: PenTool },
   { href: "/watchlist", label: "워치리스트", icon: Bookmark },
   { href: "/system", label: "시스템", icon: Activity },
