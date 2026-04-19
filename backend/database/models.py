@@ -103,3 +103,38 @@ class Watchlist(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     last_matched_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     match_count: Mapped[int] = mapped_column(Integer, default=0)
+
+
+class ArticleDraft(Base):
+    """예비 기사 — DraftDialog 에서 '예비 게시' 한 초안.
+
+    status: draft(작성 중) → in_review(결재 대기) → approved(승인) / rejected(반려)
+    """
+    __tablename__ = "article_drafts"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    title: Mapped[str] = mapped_column(String(300))
+    lead: Mapped[str] = mapped_column(Text)
+    body: Mapped[str] = mapped_column(Text)
+    background: Mapped[str | None] = mapped_column(Text)
+    category: Mapped[str | None] = mapped_column(String(30))
+    style: Mapped[str] = mapped_column(String(20), default="straight")
+    topic_hint: Mapped[str | None] = mapped_column(String(300))
+
+    six_w_check: Mapped[dict] = mapped_column(JSONB, default=dict)
+    sources: Mapped[list] = mapped_column(JSONB, default=list)
+    references: Mapped[list] = mapped_column(JSONB, default=list)
+    background_sources: Mapped[list] = mapped_column(JSONB, default=list)
+    style_anchor: Mapped[dict | None] = mapped_column(JSONB)
+    origin_article_ids: Mapped[list] = mapped_column(JSONB, default=list)
+
+    status: Mapped[str] = mapped_column(String(20), default="draft", index=True)
+    review_note: Mapped[str | None] = mapped_column(Text)
+
+    model_used: Mapped[str | None] = mapped_column(String(50))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+    submitted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

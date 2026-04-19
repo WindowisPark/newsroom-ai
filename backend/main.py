@@ -10,7 +10,10 @@ from fastapi.middleware.cors import CORSMiddleware
 from backend.config import get_settings
 from backend.database import init_db
 from backend.models.schemas import APIResponse, HealthOut, SchedulerOut
-from backend.routers import news, analysis, reports, headlines, sse, dashboard, drafts, watchlist
+from backend.routers import (
+    news, analysis, reports, headlines, sse, dashboard,
+    drafts, watchlist, article_drafts,
+)
 from backend.scheduler import start_scheduler, stop_scheduler, get_scheduler_stats
 
 logging.basicConfig(level=logging.INFO)
@@ -62,6 +65,7 @@ app.include_router(sse.router, prefix=API_PREFIX)
 app.include_router(dashboard.router, prefix=API_PREFIX)
 app.include_router(drafts.router, prefix=API_PREFIX)
 app.include_router(watchlist.router, prefix=API_PREFIX)
+app.include_router(article_drafts.router, prefix=API_PREFIX)
 
 
 @app.get("/api/v1/health", response_model=APIResponse)

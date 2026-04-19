@@ -88,11 +88,14 @@ class DraftOut(BaseModel):
     body: str
     background: str = ""
     six_w_check: SixWCheckOut = Field(default_factory=SixWCheckOut)
+    # 직접 인용 가능 원천 (자사 + 통신사 + 외신)
     sources: list[SourceRef] = Field(default_factory=list)
-    # RAG: 검색된 자사 참고 기사(최대 3). 프론트에서 투명 공개.
+    # RAG: 자사(서울신문) 과거 보도 — 투명 공개 + 본문 직접 인용 가능
     references: list[SourceRef] = Field(default_factory=list)
-    # 톤 앵커 — 동일 카테고리 자사 기사 1건, 스타일 참고용 (few-shot anchor)
+    # 톤 앵커 — 동일 카테고리 자사 기사 1건, few-shot anchor
     style_anchor: SourceRef | None = None
+    # 경쟁 일간지 기사 — 맥락 파악용, 직접 인용 금지. 투명성을 위해 메타로만 노출
+    background_sources: list[SourceRef] = Field(default_factory=list)
 
 
 # ── 워치리스트 ──
@@ -103,3 +106,41 @@ class WatchlistCreate(BaseModel):
 
 class WatchlistUpdate(BaseModel):
     is_active: bool
+
+
+# ── 예비 기사 (Article Draft) ──
+
+DraftStatus = Literal["draft", "in_review", "approved", "rejected"]
+
+
+class ArticleDraftCreate(BaseModel):
+    """DraftDialog 의 '예비 게시' 에서 DraftOut 스냅샷 + 기자가 선택한 제목을 받음."""
+    title: str = Field(min_length=1, max_length=300)
+    lead: str
+    body: str
+    background: str = ""
+    category: str | None = None
+    style: DraftStyle = "straight"
+    topic_hint: str | None = None
+    six_w_check: dict = Field(default_factory=dict)
+    sources: list[SourceRef] = Field(default_factory=list)
+    references: list[SourceRef] = Field(default_factory=list)
+    background_sources: list[SourceRef] = Field(default_factory=list)
+    style_anchor: SourceRef | None = None
+    origin_article_ids: list[str] = Field(default_factory=list)
+    model_used: str | None = None
+
+
+class ArticleDraftUpdate(BaseModel):
+    """편집 — 필드 선택적 업데이트"""
+    title: str | None = None
+    lead: str | None = None
+    body: str | None = None
+    background: str | None = None
+    category: str | None = None
+
+
+class ArticleDraftTransition(BaseModel):
+    """상태 전이 (결재 요청·승인·반려·초안으로 복귀)"""
+    to: DraftStatus
+    note: str | None = None

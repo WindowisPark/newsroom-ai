@@ -316,3 +316,120 @@ async def test_워치리스트_삭제(client):
 async def test_워치리스트_존재하지_않는_id_404(client):
     resp = await client.delete(f"/api/v1/watchlist/{uuid.uuid4()}")
     assert resp.status_code == 404
+
+
+# ── Article Drafts (예비 기사) ──
+
+_ARTICLE_DRAFT_PAYLOAD = {
+    "title": "미·이란 협상 급물살",
+    "lead": "미국과 이란이 협상 테이블로 복귀했다.",
+    "body": "본문 내용입니다.",
+    "background": "중동 긴장 완화 맥락.",
+    "category": "world",
+    "style": "straight",
+    "six_w_check": {"who": "미국과 이란"},
+    "sources": [{"name": "CNN", "url": "https://cnn.com/1"}],
+    "references": [{"name": "서울신문", "url": "https://seoul.co.kr/1"}],
+    "background_sources": [],
+    "origin_article_ids": [],
+}
+
+
+@pytest.mark.asyncio
+async def test_예비기사_저장_조회(client):
+    resp = await client.post("/api/v1/article-drafts", json=_ARTICLE_DRAFT_PAYLOAD)
+    assert resp.status_code == 200
+    created = resp.json()["data"]
+    assert created["status"] == "draft"
+    assert created["title"] == "미·이란 협상 급물살"
+    assert len(created["references"]) == 1
+
+    list_resp = await client.get("/api/v1/article-drafts")
+    assert list_resp.status_code == 200
+    assert len(list_resp.json()["data"]) == 1
+
+    detail = await client.get(f"/api/v1/article-drafts/{created['id']}")
+    assert detail.status_code == 200
+    assert detail.json()["data"]["lead"] == "미국과 이란이 협상 테이블로 복귀했다."
+
+
+@pytest.mark.asyncio
+async def test_예비기사_편집(client):
+    created = (await client.post("/api/v1/article-drafts", json=_ARTICLE_DRAFT_PAYLOAD)).json()["data"]
+    resp = await client.patch(
+        f"/api/v1/article-drafts/{created['id']}",
+        json={"title": "제목 수정됨"},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["data"]["title"] == "제목 수정됨"
+
+
+@pytest.mark.asyncio
+async def test_예비기사_상태_전이_draft_to_review_to_approved(client):
+    created = (await client.post("/api/v1/article-drafts", json=_ARTICLE_DRAFT_PAYLOAD)).json()["data"]
+    draft_id = created["id"]
+
+    # draft → in_review
+    r1 = await client.post(
+        f"/api/v1/article-drafts/{draft_id}/transition",
+        json={"to": "in_review"},
+    )
+    assert r1.status_code == 200
+    assert r1.json()["data"]["status"] == "in_review"
+    assert r1.json()["data"]["submitted_at"] is not None
+
+    # in_review → approved
+    r2 = await client.post(
+        f"/api/v1/article-drafts/{draft_id}/transition",
+        json={"to": "approved", "note": "LGTM"},
+    )
+    assert r2.status_code == 200
+    assert r2.json()["data"]["status"] == "approved"
+    assert r2.json()["data"]["review_note"] == "LGTM"
+    assert r2.json()["data"]["reviewed_at"] is not None
+
+
+@pytest.mark.asyncio
+async def test_예비기사_잘못된_전이_409(client):
+    created = (await client.post("/api/v1/article-drafts", json=_ARTICLE_DRAFT_PAYLOAD)).json()["data"]
+    # draft → approved 는 허용 안 됨 (in_review 거쳐야 함)
+    resp = await client.post(
+        f"/api/v1/article-drafts/{created['id']}/transition",
+        json={"to": "approved"},
+    )
+    assert resp.status_code == 409
+
+
+@pytest.mark.asyncio
+async def test_예비기사_in_review_상태에서_편집_거부(client):
+    created = (await client.post("/api/v1/article-drafts", json=_ARTICLE_DRAFT_PAYLOAD)).json()["data"]
+    await client.post(
+        f"/api/v1/article-drafts/{created['id']}/transition", json={"to": "in_review"}
+    )
+    resp = await client.patch(
+        f"/api/v1/article-drafts/{created['id']}", json={"title": "편집 시도"}
+    )
+    assert resp.status_code == 409
+
+
+@pytest.mark.asyncio
+async def test_예비기사_삭제(client):
+    created = (await client.post("/api/v1/article-drafts", json=_ARTICLE_DRAFT_PAYLOAD)).json()["data"]
+    resp = await client.delete(f"/api/v1/article-drafts/{created['id']}")
+    assert resp.status_code == 200
+    assert resp.json()["data"]["deleted"] is True
+
+
+@pytest.mark.asyncio
+async def test_예비기사_상태_필터(client):
+    d1 = (await client.post("/api/v1/article-drafts", json=_ARTICLE_DRAFT_PAYLOAD)).json()["data"]
+    d2 = (await client.post("/api/v1/article-drafts", json=_ARTICLE_DRAFT_PAYLOAD)).json()["data"]
+    await client.post(f"/api/v1/article-drafts/{d1['id']}/transition", json={"to": "in_review"})
+
+    drafts_only = await client.get("/api/v1/article-drafts?status=draft")
+    assert len(drafts_only.json()["data"]) == 1
+    assert drafts_only.json()["data"][0]["id"] == d2["id"]
+
+    reviews = await client.get("/api/v1/article-drafts?status=in_review")
+    assert len(reviews.json()["data"]) == 1
+    assert reviews.json()["data"][0]["id"] == d1["id"]
