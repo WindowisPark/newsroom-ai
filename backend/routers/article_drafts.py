@@ -8,9 +8,11 @@ from datetime import datetime, timezone
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from backend.analyzers.fact_check import verify_article_draft
 from backend.analyzers.schemas import (
     ArticleDraftCreate,
     ArticleDraftTransition,
@@ -18,7 +20,7 @@ from backend.analyzers.schemas import (
     DraftStatus,
 )
 from backend.database import get_db
-from backend.database.models import ArticleDraft
+from backend.database.models import Article, ArticleDraft
 from backend.models.schemas import APIResponse
 
 router = APIRouter(prefix="/article-drafts", tags=["article-drafts"])
@@ -51,12 +53,40 @@ def _serialize(d: ArticleDraft) -> dict:
         "origin_article_ids": d.origin_article_ids or [],
         "status": d.status,
         "review_note": d.review_note,
+        "fact_issues": d.fact_issues or [],
         "model_used": d.model_used,
         "created_at": d.created_at,
         "updated_at": d.updated_at,
         "submitted_at": d.submitted_at,
         "reviewed_at": d.reviewed_at,
     }
+
+
+async def _run_fact_check(
+    db: AsyncSession,
+    title: str,
+    lead: str,
+    body: str,
+    background: str,
+    origin_article_ids: list,
+) -> list[dict]:
+    """원본 기사를 조회해 자동 팩트 검증 실행, FactIssue dict 리스트 반환."""
+    source_articles: list = []
+    if origin_article_ids:
+        try:
+            ids = [UUID(str(x)) for x in origin_article_ids]
+            stmt = select(Article).where(Article.id.in_(ids))
+            source_articles = list((await db.execute(stmt)).scalars().all())
+        except Exception:
+            source_articles = []
+    issues = verify_article_draft(
+        title=title,
+        lead=lead,
+        body=body,
+        background=background,
+        source_articles=source_articles,
+    )
+    return [i.model_dump() for i in issues]
 
 
 @router.get("", response_model=APIResponse)
@@ -77,7 +107,15 @@ async def create_draft(
     req: ArticleDraftCreate,
     db: AsyncSession = Depends(get_db),
 ):
-    """DraftDialog 에서 '예비 게시' — 초안 스냅샷 저장"""
+    """DraftDialog 에서 '예비 게시' — 초안 스냅샷 저장 + 자동 팩트 검증"""
+    fact_issues = await _run_fact_check(
+        db,
+        title=req.title,
+        lead=req.lead,
+        body=req.body,
+        background=req.background or "",
+        origin_article_ids=req.origin_article_ids,
+    )
     item = ArticleDraft(
         title=req.title.strip(),
         lead=req.lead,
@@ -93,6 +131,7 @@ async def create_draft(
         style_anchor=req.style_anchor.model_dump() if req.style_anchor else None,
         origin_article_ids=req.origin_article_ids,
         status="draft",
+        fact_issues=fact_issues,
         model_used=req.model_used,
     )
     db.add(item)
@@ -129,6 +168,29 @@ async def update_draft(
     for key, value in payload.items():
         if value is not None and value != "":
             setattr(item, key, value)
+
+    # 본문이 바뀌었으면 자동 검증 재실행. 기존 ack 는 claim 이 동일하면 보존.
+    prior_ack: dict[str, dict] = {
+        i.get("claim", ""): i
+        for i in (item.fact_issues or [])
+        if i.get("acknowledged")
+    }
+    new_issues = await _run_fact_check(
+        db,
+        title=item.title,
+        lead=item.lead,
+        body=item.body,
+        background=item.background or "",
+        origin_article_ids=item.origin_article_ids or [],
+    )
+    for issue in new_issues:
+        prior = prior_ack.get(issue.get("claim", ""))
+        if prior:
+            issue["acknowledged"] = True
+            issue["acknowledged_by"] = prior.get("acknowledged_by")
+            issue["acknowledged_at"] = prior.get("acknowledged_at")
+            issue["acknowledged_note"] = prior.get("acknowledged_note")
+    item.fact_issues = new_issues
     await db.commit()
     await db.refresh(item)
     return APIResponse(data=_serialize(item))
@@ -140,7 +202,11 @@ async def transition_draft(
     req: ArticleDraftTransition,
     db: AsyncSession = Depends(get_db),
 ):
-    """상태 전이 — 결재 요청(draft→in_review) / 승인 / 반려 등"""
+    """상태 전이 — 결재 요청(draft→in_review) / 승인 / 반려 등
+
+    in_review → approved 전이는 모든 high-severity fact_issue 가
+    acknowledged 되어야 허용. 미확인 경고가 있으면 409 반환.
+    """
     item = await db.get(ArticleDraft, item_id)
     if not item:
         raise HTTPException(status_code=404, detail="article draft not found")
@@ -152,6 +218,21 @@ async def transition_draft(
             detail=f"transition {item.status} → {req.to} not allowed",
         )
 
+    # 승인 가드 — 미확인 high-severity 경고가 있으면 거부
+    if req.to == "approved":
+        unchecked = [
+            i for i in (item.fact_issues or [])
+            if i.get("severity") == "high" and not i.get("acknowledged")
+        ]
+        if unchecked:
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    f"{len(unchecked)}건의 미확인 팩트 경고가 있습니다. "
+                    "모두 확인 후 승인 가능합니다."
+                ),
+            )
+
     item.status = req.to
     now = datetime.now(timezone.utc)
     if req.to == "in_review":
@@ -160,6 +241,47 @@ async def transition_draft(
         item.reviewed_at = now
     if req.note is not None:
         item.review_note = req.note
+    await db.commit()
+    await db.refresh(item)
+    return APIResponse(data=_serialize(item))
+
+
+class FactIssueAcknowledge(BaseModel):
+    acknowledged: bool = True
+    acknowledged_by: str | None = None
+    note: str | None = None
+
+
+@router.post(
+    "/{item_id}/fact-issues/{issue_id}/acknowledge",
+    response_model=APIResponse,
+)
+async def acknowledge_fact_issue(
+    item_id: UUID,
+    issue_id: str,
+    req: FactIssueAcknowledge,
+    db: AsyncSession = Depends(get_db),
+):
+    """개별 팩트 경고 확인 (HITL). audit trail 로 acknowledged_* 기록."""
+    item = await db.get(ArticleDraft, item_id)
+    if not item:
+        raise HTTPException(status_code=404, detail="article draft not found")
+
+    issues = list(item.fact_issues or [])
+    target_idx = next((idx for idx, i in enumerate(issues) if i.get("id") == issue_id), None)
+    if target_idx is None:
+        raise HTTPException(status_code=404, detail="fact issue not found")
+
+    now = datetime.now(timezone.utc).isoformat()
+    issues[target_idx] = {
+        **issues[target_idx],
+        "acknowledged": req.acknowledged,
+        "acknowledged_by": req.acknowledged_by if req.acknowledged else None,
+        "acknowledged_at": now if req.acknowledged else None,
+        "acknowledged_note": req.note if req.acknowledged else None,
+    }
+    # JSONB 변경을 SQLAlchemy 에 명시적으로 알림
+    item.fact_issues = issues
     await db.commit()
     await db.refresh(item)
     return APIResponse(data=_serialize(item))

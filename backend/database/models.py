@@ -131,6 +131,9 @@ class ArticleDraft(Base):
     status: Mapped[str] = mapped_column(String(20), default="draft", index=True)
     review_note: Mapped[str | None] = mapped_column(Text)
 
+    # 자동 팩트 검증 결과 — 편집자가 각 issue 를 개별 ack 처리
+    fact_issues: Mapped[list] = mapped_column(JSONB, default=list)
+
     model_used: Mapped[str | None] = mapped_column(String(50))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(

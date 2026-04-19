@@ -1,0 +1,89 @@
+# 공직자·정치인 Entity Knowledge Base
+#
+# fact_check 모듈이 LLM 생성문에서 "{name} {role}" 패턴을 감지해
+# role 이 current_role 과 불일치하면 role_mismatch Issue 로 flag.
+#
+# 구조:
+#   - name: 인물명 (한글, 공백 없음 또는 실제 표기 그대로)
+#     current_role: 현재 공식 직책 (예: "대통령", "국회의원", "장관")
+#     affiliation: 소속 (정당·부처 등, 선택)
+#     aliases: 별칭·전직 (선택)
+#     source_note: KB 기록 근거 (선택)
+#
+# 갱신은 수동. 인물이 새로 등장하면 추가.
+# 기준 시점: 2026-04 (제출 시점 기준 수작업 업데이트 필요)
+
+entities:
+  # 대통령 — 중복 클레임 방지를 위해 단일
+  - name: "이재명"
+    current_role: "대통령"
+    affiliation: "더불어민주당"
+    aliases: ["이재명 대통령"]
+    source_note: "2025-06-03 제21대 대통령 취임"
+
+  # 주요 정당 대표·국회의원
+  - name: "이준석"
+    current_role: "국회의원"
+    affiliation: "개혁신당"
+    aliases: ["이준석 의원", "이준석 대표"]
+    source_note: "개혁신당 대표 경력, 대통령 직책 없음"
+
+  - name: "홍준표"
+    current_role: "대구시장"
+    affiliation: "국민의힘"
+    aliases: ["홍준표 시장", "홍 시장"]
+
+  - name: "한동훈"
+    current_role: "국회의원"
+    affiliation: "국민의힘"
+    aliases: ["한동훈 의원"]
+
+  - name: "조국"
+    current_role: "국회의원"
+    affiliation: "조국혁신당"
+    aliases: ["조국 대표"]
+
+  - name: "김기현"
+    current_role: "국회의원"
+    affiliation: "국민의힘"
+
+  - name: "박지원"
+    current_role: "국회의원"
+    affiliation: "더불어민주당"
+
+  # 국무총리
+  - name: "김민석"
+    current_role: "국무총리"
+    affiliation: "정부"
+    source_note: "2025년 취임 (이재명 정부)"
+
+  # 주요 부처 장관 (샘플)
+  - name: "정동영"
+    current_role: "통일부 장관"
+    affiliation: "정부"
+
+  # 전직 대통령 — 흔한 혼동 원천
+  - name: "윤석열"
+    current_role: "전 대통령"
+    affiliation: "국민의힘"
+    aliases: ["윤 전 대통령"]
+    source_note: "2022-05 ~ 2025-04 재임 후 퇴임"
+
+  - name: "문재인"
+    current_role: "전 대통령"
+    affiliation: "더불어민주당"
+    aliases: ["문 전 대통령"]
+
+  - name: "박근혜"
+    current_role: "전 대통령"
+    affiliation: "무소속"
+
+  # 정책실 · 청와대급 보좌진 (추가 예시)
+  - name: "김용범"
+    current_role: "정책실장"
+    affiliation: "대통령실"
+
+  - name: "하정우"
+    current_role: "AI수석"
+    affiliation: "대통령실"
+    source_note: "네이버 Clova 전 총괄에서 AI수석 임명"

@@ -73,15 +73,7 @@
   - `_boost_by_frequency` 를 DB-wide(오늘 기준)로 확장, **키워드별 고유 매체 수**로 가중
   - 속보 조건: `importance_score >= 8.5 AND source_count >= 2`
 
-### 3-2. 국내 언론 관행 — 매체 간 상호 인용 회피
-- **관행 기반**: 한국 종합일간지 편집 관행상 (a) 자사 취재를 원칙으로 하고 (b) 통신사(연합뉴스, Reuters, AP 등)와 외신 일간지는 직접 인용 가능하지만 (c) **국내 경쟁 일간지(한겨레·조선·중앙·동아·한국경제 등)의 매체명 직접 인용은 거의 하지 않음**. 이유는 (i) 사실 확인 책임이 자사로 넘어오지 않음, (ii) 경쟁사 홍보 회피, (iii) 특종 분쟁 여지.
-- **우리 반영**:
-  - `drafter.py` 에 `OWN_SOURCE_NAMES` / `AGENCY_SOURCE_NAMES` / `COMPETITOR_DAILY_NAMES` 3층위 정의
-  - `_retrieve_by_tier()` 로 references(own+agency)와 background(competitor)를 분리 검색·주입
-  - `DRAFT_SYSTEM` 프롬프트에 "경쟁 일간지 직접 인용 금지, 익명 처리" 원칙 명시
-  - `DraftOut.background_sources[]` 로 투명 공개는 하되 본문·sources 에는 반영하지 않음
-
-### 3-3. Category Alignment in NLP Pipelines
+### 3-2. Category Alignment in NLP Pipelines
 - **일반 원칙**: 분류 스키마를 단일 원천(single source of truth)으로 관리해 프롬프트·DB·UI 이탈 방지. 특히 `Literal` 기반 검증이 LLM 출력 정규화를 강제.
 - **우리 반영**:
   - `schemas.py` 의 `Category` Literal 이 단일 원천, `CATEGORIES` tuple 을 프롬프트에 f-string 주입
@@ -89,7 +81,38 @@
 
 ---
 
-## 4. 활용 예정 확장 (미구현)
+## 4. Fact-checking / Hallucination Mitigation — 3층 방어선
+
+### 4-1. FActScore · FacTool (2024)
+- **개념**: LLM 생성문을 문장 단위로 분해해 각 claim 을 외부 KB 또는 retrieved 원문과 대조해 faithfulness 를 수치화.
+- **한계**: 연구 단계에서도 false positive 20~40%. 프로덕션에는 규칙 기반 필터와 병용 권장.
+- **우리 반영**:
+  - 완전 자동 faithfulness 측정은 포기 — 학계 SOTA 미성숙
+  - 대신 **규칙 기반 검증 3종 + Human-in-the-loop ack** 하이브리드
+  - `backend/analyzers/fact_check.py` 의 `verify_article_draft()` 가 생성문을 대상으로 Entity KB 대조, 수치 grounding, 엔티티 grounding 을 실행
+
+### 4-2. Chain-of-Verification (CoVe, Dhuliawala et al., 2023)
+- **개념**: LLM 이 자기 출력을 다시 검증하는 다중 호출 방법론.
+- **우리 판단**: 초안 1건당 토큰 2배, PT 데모 비용·지연 부담. 현 스코프에서 미적용.
+
+### 4-3. Human-in-the-loop + Audit trail
+- **근거**: 자동 검증의 한계를 인정하고 편집자 판단을 최종 레이어로. 각 경고에 `acknowledged_by`/`_at`/`_note` 를 기록해 audit trail 확보 — 저널리즘 윤리 기준(AP · Reuters fact-check 가이드라인)과 정합.
+- **우리 반영**:
+  - `ArticleDraft.fact_issues[].acknowledged` 개별 확인 필드
+  - `in_review → approved` 전이 시 high-severity 경고가 모두 ack 되어야 허용 (409 가드)
+  - UI: 편집실 상세 페이지 상단 `FactCheckCard` — 경고별 [확인] 버튼 + 진행바 + ack 메모 표시
+  - AI 생성물 명시: 본문 상단 "🤖 AI 초안 — 편집자 검증 전" 워터마크
+
+### 4-4. 국내 언론 관행 — 경쟁 일간지 인용 회피
+- **관행 기반**: 한국 종합일간지 편집 관행상 (a) 자사 취재를 원칙으로 하고 (b) 통신사(연합뉴스, Reuters, AP 등)와 외신 일간지는 직접 인용 가능하지만 (c) **국내 경쟁 일간지(한겨레·조선·중앙·동아·한국경제 등)의 매체명 직접 인용은 거의 하지 않음**. 이유는 (i) 사실 확인 책임이 자사로 넘어오지 않음, (ii) 경쟁사 홍보 회피, (iii) 특종 분쟁 여지.
+- **우리 반영**:
+  - `drafter.py` 에 `OWN_SOURCE_NAMES` / `AGENCY_SOURCE_NAMES` / `COMPETITOR_DAILY_NAMES` 3층위 정의
+  - `_retrieve_by_tier()` 로 references(own+agency)와 background(competitor)를 분리 검색·주입
+  - `DRAFT_SYSTEM` 프롬프트에 "경쟁 일간지 직접 인용 금지, 익명 처리" 원칙 명시
+
+---
+
+## 5. 활용 예정 확장 (미구현)
 
 ### 4-1. Hierarchical Long Text Style Transfer (arxiv 2505.07888)
 - **URL**: https://arxiv.org/html/2505.07888v1

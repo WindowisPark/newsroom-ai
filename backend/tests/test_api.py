@@ -433,3 +433,82 @@ async def test_예비기사_상태_필터(client):
     reviews = await client.get("/api/v1/article-drafts?status=in_review")
     assert len(reviews.json()["data"]) == 1
     assert reviews.json()["data"][0]["id"] == d1["id"]
+
+
+# ── Fact Check integration ──
+
+_HALLUCINATION_PAYLOAD = {
+    **_ARTICLE_DRAFT_PAYLOAD,
+    "title": "이준석 대통령 인도 순방",
+    "lead": "이준석 대통령이 인도 뉴델리를 방문했다.",
+    "body": "이준석 대통령이 인도 방문에서 공급망 협력을 논의했다고 밝혔다.",
+}
+
+
+@pytest.mark.asyncio
+async def test_예비기사_저장시_자동_팩트검증(client):
+    """이준석 대통령 같은 명백한 직책 오류는 저장 시 fact_issues 에 자동 기록"""
+    resp = await client.post("/api/v1/article-drafts", json=_HALLUCINATION_PAYLOAD)
+    assert resp.status_code == 200
+    data = resp.json()["data"]
+    issues = data["fact_issues"]
+    assert any(
+        i["kind"] == "role_mismatch" and i["severity"] == "high"
+        for i in issues
+    )
+
+
+@pytest.mark.asyncio
+async def test_미확인_경고로_승인_차단(client):
+    """high-severity ack 안 되면 approved 전이 409"""
+    created = (await client.post("/api/v1/article-drafts", json=_HALLUCINATION_PAYLOAD)).json()["data"]
+    await client.post(f"/api/v1/article-drafts/{created['id']}/transition", json={"to": "in_review"})
+
+    resp = await client.post(
+        f"/api/v1/article-drafts/{created['id']}/transition",
+        json={"to": "approved"},
+    )
+    assert resp.status_code == 409
+    assert "미확인" in resp.json()["detail"] or "팩트" in resp.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_acknowledge_후_승인_성공(client):
+    """모든 high-severity 를 ack 하면 approved 가능"""
+    created = (await client.post("/api/v1/article-drafts", json=_HALLUCINATION_PAYLOAD)).json()["data"]
+    await client.post(f"/api/v1/article-drafts/{created['id']}/transition", json={"to": "in_review"})
+
+    high_issues = [i for i in created["fact_issues"] if i["severity"] == "high"]
+    for issue in high_issues:
+        ack_resp = await client.post(
+            f"/api/v1/article-drafts/{created['id']}/fact-issues/{issue['id']}/acknowledge",
+            json={"acknowledged": True, "acknowledged_by": "편집자", "note": "확인 완료"},
+        )
+        assert ack_resp.status_code == 200
+
+    approve_resp = await client.post(
+        f"/api/v1/article-drafts/{created['id']}/transition",
+        json={"to": "approved"},
+    )
+    assert approve_resp.status_code == 200
+    assert approve_resp.json()["data"]["status"] == "approved"
+
+
+@pytest.mark.asyncio
+async def test_ack_후_audit_trail_기록(client):
+    """acknowledge 시 acknowledged_by / acknowledged_at / note 가 기록됨"""
+    created = (await client.post("/api/v1/article-drafts", json=_HALLUCINATION_PAYLOAD)).json()["data"]
+    issue = next(i for i in created["fact_issues"] if i["severity"] == "high")
+
+    resp = await client.post(
+        f"/api/v1/article-drafts/{created['id']}/fact-issues/{issue['id']}/acknowledge",
+        json={"acknowledged": True, "acknowledged_by": "테스트편집자", "note": "원문 대조 완료"},
+    )
+    assert resp.status_code == 200
+    updated = next(i for i in resp.json()["data"]["fact_issues"] if i["id"] == issue["id"])
+    assert updated["acknowledged"] is True
+    assert updated["acknowledged_by"] == "테스트편집자"
+    assert updated["acknowledged_note"] == "원문 대조 완료"
+    assert updated["acknowledged_at"] is not None
+
+

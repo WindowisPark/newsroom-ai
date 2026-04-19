@@ -385,3 +385,47 @@ class TestDraftOut:
         })
         assert out.background == ""
         assert out.sources == []
+
+
+# ── Fact Check ──
+
+class TestFactCheck:
+    """fact_check 모듈 단위 테스트"""
+
+    def test_이준석_대통령_role_mismatch_catch(self):
+        from backend.analyzers.fact_check import verify_text
+        text = "이준석 대통령이 인도를 방문했다."
+        issues = verify_text(text)
+        assert any(
+            i.kind == "role_mismatch" and "이준석" in i.claim and i.severity == "high"
+            for i in issues
+        )
+
+    def test_이재명_대통령_올바른_직책_no_issue(self):
+        from backend.analyzers.fact_check import verify_text
+        text = "이재명 대통령이 순방에 나섰다."
+        issues = [i for i in verify_text(text) if i.kind == "role_mismatch"]
+        assert len(issues) == 0
+
+    def test_원문에_없는_수치_flag(self):
+        from backend.analyzers.fact_check import verify_text
+        text = "IMF는 1만 달러 뒤처질 것으로 전망했다."
+        issues = verify_text(text, source_corpus="IMF는 경고를 냈다.")
+        assert any(i.kind == "number_unsupported" for i in issues)
+
+    def test_원문에_있는_수치_pass(self):
+        from backend.analyzers.fact_check import verify_text
+        text = "60만 원이 지급된다."
+        issues = [
+            i for i in verify_text(text, source_corpus="지원금 60만 원을 지급")
+            if i.kind == "number_unsupported"
+        ]
+        assert len(issues) == 0
+
+    def test_span_text_포함_이준석(self):
+        from backend.analyzers.fact_check import verify_text
+        text = "이준석 대통령이 순방에 나섰다."
+        issues = verify_text(text)
+        issue = next(i for i in issues if i.kind == "role_mismatch")
+        assert issue.span_text is not None
+        assert "이준석" in issue.span_text
