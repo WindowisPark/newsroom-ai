@@ -169,3 +169,45 @@ export interface SchedulerData {
   last_run: string;
   total_collections: number;
 }
+
+// ── Draft (기사 초안) ──
+
+export interface SourceRef {
+  name: string;
+  url: string;
+}
+
+export interface SixWCheck {
+  who: string | null;
+  when: string | null;
+  where: string | null;
+  what: string | null;
+  how: string | null;
+  why: string | null;
+}
+
+export type DraftStyle = "straight" | "analysis" | "feature";
+
+export interface DraftData {
+  title_candidates: string[];
+  lead: string;
+  body: string;
+  background: string;
+  six_w_check: SixWCheck;
+  sources: SourceRef[];
+  model_used: string;
+  prompt_tokens: number;
+  completion_tokens: number;
+  generated_at: string;
+}
+
+// ── Watchlist ──
+
+export interface WatchlistItem {
+  id: string;
+  keyword: string;
+  is_active: boolean;
+  created_at: string;
+  last_matched_at: string | null;
+  match_count: number;
+}

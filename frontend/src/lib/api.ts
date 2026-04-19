@@ -10,6 +10,9 @@ import type {
   TimelineData,
   HealthData,
   SchedulerData,
+  DraftData,
+  DraftStyle,
+  WatchlistItem,
 } from "./types";
 
 const BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1";
@@ -104,6 +107,47 @@ export async function getHealth() {
 
 export async function getSchedulerStatus() {
   return fetchAPI<SchedulerData>("/system/scheduler");
+}
+
+// Drafts (기사 초안)
+export async function generateDraft(
+  articleIds: string[],
+  style: DraftStyle = "straight",
+  topicHint?: string
+) {
+  return fetchAPI<DraftData>("/drafts/generate", {
+    method: "POST",
+    body: JSON.stringify({
+      article_ids: articleIds,
+      style,
+      topic_hint: topicHint,
+    }),
+  });
+}
+
+// Watchlist
+export async function getWatchlist() {
+  return fetchAPI<WatchlistItem[]>("/watchlist");
+}
+
+export async function addWatchlist(keyword: string) {
+  return fetchAPI<WatchlistItem>("/watchlist", {
+    method: "POST",
+    body: JSON.stringify({ keyword }),
+  });
+}
+
+export async function patchWatchlist(id: string, isActive: boolean) {
+  return fetchAPI<WatchlistItem>(`/watchlist/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify({ is_active: isActive }),
+  });
+}
+
+export async function deleteWatchlist(id: string) {
+  return fetchAPI<{ deleted: boolean }>(`/watchlist/${id}`, {
+    method: "DELETE",
+  });
 }
 
 // SSE
