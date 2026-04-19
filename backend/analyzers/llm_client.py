@@ -23,6 +23,7 @@ MODEL_FOR = {
     "briefing":     HAIKU_MODEL,   # 브리핑 생성: 정리된 데이터 → 역피라미드 작문 (단순 요약)
     "headline":     HAIKU_MODEL,   # 헤드라인 추천: 제목 3개 생성 (단순 생성)
     "timeline":     SONNET_MODEL,  # 타임라인: 과거 사건 recall + 맥락 추론 (지식 필요)
+    "draft":        SONNET_MODEL,  # 기사 초안: 다중 기사 교차 + 역피라미드 + 6하원칙 (복잡 작문)
 }
 
 _client: AsyncAnthropic | None = None

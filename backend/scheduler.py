@@ -13,8 +13,9 @@ from backend.analyzers.reporter import generate_briefing
 from backend.analyzers.agenda import analyze_agenda
 from backend.config import get_settings
 from backend.database import async_session
-from backend.database.models import Article, ArticleAnalysis, BriefingReport, AgendaReport
+from backend.database.models import Article, ArticleAnalysis, BriefingReport, AgendaReport, Watchlist
 from backend.routers.sse import broadcast_event
+from backend.analyzers.agenda import _title_contains
 
 logger = logging.getLogger(__name__)
 
@@ -97,10 +98,45 @@ async def collection_pipeline():
                     "titles": [a.article.title if a.article else "" for a in breaking][:3],
                 })
 
+            # 워치리스트 매칭: 활성 키워드가 이번 배치 분석 결과에 잡히면 SSE 브로드캐스트
+            await _match_watchlist(db, analyses)
+
         # 3. 자동 보고: 충분한 기사가 분석되면 브리핑 + 의제 자동 생성
         settings = get_settings()
         if settings.auto_report_enabled:
             await _auto_generate_reports(db)
+
+
+async def _match_watchlist(db: AsyncSession, analyses: list[ArticleAnalysis]):
+    """활성 워치리스트 키워드와 분석 결과를 매칭해 SSE 이벤트 발송"""
+    if not analyses:
+        return
+
+    result = await db.execute(select(Watchlist).where(Watchlist.is_active == True))  # noqa: E712
+    active = list(result.scalars().all())
+    if not active:
+        return
+
+    now = datetime.now(timezone.utc)
+    any_match = False
+    for analysis in analyses:
+        title = analysis.article.title if analysis.article else ""
+        analysis_keywords = set(analysis.keywords or [])
+        for w in active:
+            matched = w.keyword in analysis_keywords or _title_contains(title, w.keyword)
+            if not matched:
+                continue
+            any_match = True
+            broadcast_event("watchlist_match", {
+                "keyword": w.keyword,
+                "article_id": str(analysis.article_id),
+                "article_title": title,
+            })
+            w.match_count += 1
+            w.last_matched_at = now
+
+    if any_match:
+        await db.commit()
 
 
 async def _auto_generate_reports(db: AsyncSession):

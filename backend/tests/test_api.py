@@ -213,3 +213,106 @@ async def test_의제_분석_mock(client, db_session):
         data = resp.json()
         assert len(data["data"]["top_issues"]) == 1
         assert data["data"]["top_issues"][0]["topic"] == "테스트 이슈"
+
+
+# ── Drafts ──
+
+@pytest.mark.asyncio
+async def test_초안_생성_mock(client, db_session):
+    """LLM을 mock하여 초안 생성 테스트"""
+    article = await insert_article(db_session, title="호르무즈 해협 봉쇄")
+
+    mock_llm_response = {
+        "content": {
+            "title_candidates": ["호르무즈 봉쇄", "중동 긴장 고조", "해협 봉쇄 파장"],
+            "lead": "이란이 호르무즈 해협을 봉쇄했다.",
+            "body": "자세한 본문 Markdown",
+            "background": "배경 설명",
+            "six_w_check": {"who": "이란", "what": "호르무즈 봉쇄"},
+            "sources": [],
+        },
+        "prompt_tokens": 100,
+        "completion_tokens": 200,
+        "model_used": "claude-sonnet-4-6",
+    }
+
+    with patch("backend.analyzers.drafter.call_llm", new_callable=AsyncMock, return_value=mock_llm_response):
+        resp = await client.post(
+            "/api/v1/drafts/generate",
+            json={"article_ids": [str(article.id)], "style": "straight"},
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert len(data["data"]["title_candidates"]) == 3
+        # 빈 sources는 입력 기사에서 자동 채움
+        assert len(data["data"]["sources"]) == 1
+        assert data["data"]["sources"][0]["name"] == "테스트뉴스"
+
+
+@pytest.mark.asyncio
+async def test_초안_빈_article_ids_거부(client):
+    resp = await client.post("/api/v1/drafts/generate", json={"article_ids": []})
+    assert resp.status_code == 422  # pydantic min_length=1
+
+
+@pytest.mark.asyncio
+async def test_초안_존재하지_않는_기사(client):
+    resp = await client.post(
+        "/api/v1/drafts/generate",
+        json={"article_ids": [str(uuid.uuid4())]},
+    )
+    assert resp.status_code == 404
+
+
+# ── Watchlist ──
+
+@pytest.mark.asyncio
+async def test_워치리스트_목록_빈(client):
+    resp = await client.get("/api/v1/watchlist")
+    assert resp.status_code == 200
+    assert resp.json()["data"] == []
+
+
+@pytest.mark.asyncio
+async def test_워치리스트_추가_조회(client):
+    resp = await client.post("/api/v1/watchlist", json={"keyword": "호르무즈"})
+    assert resp.status_code == 200
+    item = resp.json()["data"]
+    assert item["keyword"] == "호르무즈"
+    assert item["is_active"] is True
+    assert item["match_count"] == 0
+
+    resp2 = await client.get("/api/v1/watchlist")
+    assert len(resp2.json()["data"]) == 1
+
+
+@pytest.mark.asyncio
+async def test_워치리스트_중복_409(client):
+    await client.post("/api/v1/watchlist", json={"keyword": "환율"})
+    resp = await client.post("/api/v1/watchlist", json={"keyword": "환율"})
+    assert resp.status_code == 409
+
+
+@pytest.mark.asyncio
+async def test_워치리스트_활성_토글(client):
+    created = (await client.post("/api/v1/watchlist", json={"keyword": "금리"})).json()["data"]
+    resp = await client.patch(f"/api/v1/watchlist/{created['id']}", json={"is_active": False})
+    assert resp.status_code == 200
+    assert resp.json()["data"]["is_active"] is False
+
+
+@pytest.mark.asyncio
+async def test_워치리스트_삭제(client):
+    created = (await client.post("/api/v1/watchlist", json={"keyword": "AI"})).json()["data"]
+    resp = await client.delete(f"/api/v1/watchlist/{created['id']}")
+    assert resp.status_code == 200
+    assert resp.json()["data"]["deleted"] is True
+
+    resp_list = await client.get("/api/v1/watchlist")
+    assert resp_list.json()["data"] == []
+
+
+@pytest.mark.asyncio
+async def test_워치리스트_존재하지_않는_id_404(client):
+    resp = await client.delete(f"/api/v1/watchlist/{uuid.uuid4()}")
+    assert resp.status_code == 404

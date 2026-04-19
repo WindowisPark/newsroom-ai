@@ -344,3 +344,44 @@ class TestTruncateContent:
         # limit 와 같은 길이는 그대로
         content = "x" * 1000
         assert self.trunc(content, limit=1000) == content
+
+
+# ── DraftOut 스키마 ──
+
+class TestDraftOut:
+    """DraftOut / SixWCheckOut 검증"""
+
+    def test_정상_응답_통과(self):
+        from backend.analyzers.schemas import DraftOut
+        out = DraftOut.model_validate({
+            "title_candidates": ["제목1", "제목2", "제목3"],
+            "lead": "리드 문단",
+            "body": "본문",
+            "background": "맥락",
+            "six_w_check": {"who": "A", "what": "B"},
+            "sources": [{"name": "매체", "url": "https://x.com"}],
+        })
+        assert len(out.title_candidates) == 3
+        assert out.six_w_check.who == "A"
+        assert out.six_w_check.why is None
+
+    def test_빈_title_candidates_거부(self):
+        import pytest
+        from pydantic import ValidationError
+        from backend.analyzers.schemas import DraftOut
+        with pytest.raises(ValidationError):
+            DraftOut.model_validate({
+                "title_candidates": [],
+                "lead": "",
+                "body": "",
+            })
+
+    def test_최소_필드만(self):
+        from backend.analyzers.schemas import DraftOut
+        out = DraftOut.model_validate({
+            "title_candidates": ["단일"],
+            "lead": "l",
+            "body": "b",
+        })
+        assert out.background == ""
+        assert out.sources == []

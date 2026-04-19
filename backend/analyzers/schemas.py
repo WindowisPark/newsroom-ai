@@ -58,3 +58,43 @@ class AgendaOut(BaseModel):
     """AGENDA_SYSTEM 전체 응답"""
     top_issues: list[AgendaIssueOut] = Field(default_factory=list)
     analysis_summary: str = ""
+
+
+# ── 기사 초안 생성 (Sonnet 4.6) ──
+
+DraftStyle = Literal["straight", "analysis", "feature"]
+
+
+class SixWCheckOut(BaseModel):
+    """6하원칙 self-check. 누락 항목은 None."""
+    who: str | None = None
+    when: str | None = None
+    where: str | None = None
+    what: str | None = None
+    how: str | None = None
+    why: str | None = None
+
+
+class SourceRef(BaseModel):
+    name: str
+    url: str
+
+
+class DraftOut(BaseModel):
+    """DRAFT_SYSTEM 응답 스키마"""
+    title_candidates: list[str] = Field(min_length=1, max_length=5)
+    lead: str
+    body: str
+    background: str = ""
+    six_w_check: SixWCheckOut = Field(default_factory=SixWCheckOut)
+    sources: list[SourceRef] = Field(default_factory=list)
+
+
+# ── 워치리스트 ──
+
+class WatchlistCreate(BaseModel):
+    keyword: str = Field(min_length=1, max_length=100)
+
+
+class WatchlistUpdate(BaseModel):
+    is_active: bool

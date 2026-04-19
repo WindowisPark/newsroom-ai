@@ -1,7 +1,7 @@
 import uuid
 from datetime import date, datetime
 
-from sqlalchemy import Date, DateTime, Float, ForeignKey, Integer, String, Text, func
+from sqlalchemy import Boolean, Date, DateTime, Float, ForeignKey, Integer, String, Text, func
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -92,3 +92,14 @@ class HeadlineRecommendation(Base):
     context_summary: Mapped[str | None] = mapped_column(Text)
     generated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     model_used: Mapped[str] = mapped_column(String(50))
+
+
+class Watchlist(Base):
+    __tablename__ = "watchlists"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    keyword: Mapped[str] = mapped_column(String(100), unique=True, index=True)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    last_matched_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    match_count: Mapped[int] = mapped_column(Integer, default=0)
