@@ -21,14 +21,48 @@ from backend.database.models import Article, ArticleAnalysis
 from backend.prompts import DRAFT_SYSTEM
 
 
-# 자사 매체명 화이트리스트 — source_name 매칭용 (RSS/NewsAPI의 source_name과 동일해야 함)
+# ── 매체 분류 ──
+# 한국 언론 관행상 자사·통신사·외신은 본문에 매체명 인용 가능.
+# 국내 경쟁 일간지는 직접 인용하지 않고 '업계에 따르면' 등 익명 처리하거나
+# 자사에서 별도 취재·확인한 것처럼 서술한다. 근거: docs/REFERENCES.md §3.
 OWN_SOURCE_NAMES = ["서울신문"]
+AGENCY_SOURCE_NAMES = [
+    "연합뉴스",
+    # 외신·통신사 (NewsAPI source_name 과 RSS FOREIGN_FEEDS 키)
+    "Reuters", "AP", "AFP",
+    "BBC", "The Guardian", "Al Jazeera", "NYT",
+    "CNN", "BBC News", "Associated Press",
+]
+COMPETITOR_DAILY_NAMES = [
+    "한겨레", "한국경제", "조선일보", "동아일보",
+    "중앙일보", "경향신문", "매일경제", "국민일보", "광주일보", "서울경제",
+]
 
 # Retrieval 파라미터
 _RECENCY_WINDOW_DAYS = 90
 _TOP_REFERENCES = 3
+_TOP_BACKGROUND = 3
 _SNIPPET_CHARS_DESC = 200
 _SNIPPET_CHARS_LEAD = 300
+
+
+def _source_tier(source_name: str) -> str:
+    """매체명 → 'own' / 'agency' / 'competitor' / 'other' 층위 반환"""
+    if source_name in OWN_SOURCE_NAMES:
+        return "own"
+    if source_name in AGENCY_SOURCE_NAMES:
+        return "agency"
+    if source_name in COMPETITOR_DAILY_NAMES:
+        return "competitor"
+    # 부분 매칭 (naver 추출 도메인 대응)
+    lowered = source_name.lower()
+    for name in AGENCY_SOURCE_NAMES:
+        if name.lower() in lowered:
+            return "agency"
+    for name in COMPETITOR_DAILY_NAMES:
+        if name.lower() in lowered or name in source_name:
+            return "competitor"
+    return "other"
 
 
 async def generate_draft(
@@ -53,15 +87,28 @@ async def generate_draft(
     if missing:
         raise LookupError(f"articles not found: {sorted(missing)}")
 
-    # ── RAG: 자사 기사 검색 ──
+    # ── RAG: 자사·통신사(references) + 경쟁 일간지(background) 분리 검색 ──
     query_keywords = _collect_query_keywords(articles, topic_hint)
     dominant_category = _dominant_category(articles)
-    references = await _retrieve_references(db, query_keywords, article_ids)
-    style_anchor = await _retrieve_style_anchor(db, dominant_category, [r["id"] for r in references])
+    references = await _retrieve_by_tier(
+        db, query_keywords, article_ids,
+        tiers=("own", "agency"),
+        top_n=_TOP_REFERENCES,
+    )
+    exclude_ids = article_ids + [r["id"] for r in references]
+    background = await _retrieve_by_tier(
+        db, query_keywords, exclude_ids,
+        tiers=("competitor",),
+        top_n=_TOP_BACKGROUND,
+    )
+    style_anchor = await _retrieve_style_anchor(
+        db, dominant_category, [r["id"] for r in references]
+    )
 
     # LLM 입력 구성
     articles_text = _build_articles_block(articles)
     refs_text = _build_references_block(references)
+    background_text = _build_background_block(background)
     anchor_text = _build_style_anchor_block(style_anchor)
     topic_line = f"\n진입 맥락(선택 헤드라인/주제): {topic_hint}\n" if topic_hint else ""
 
@@ -71,7 +118,7 @@ style: {style}{topic_line}
 
 === 관련 기사 ({len(articles)}건) ===
 {articles_text}
-{refs_text}{anchor_text}"""
+{refs_text}{background_text}{anchor_text}"""
 
     llm_result = await call_llm(
         system_prompt=DRAFT_SYSTEM,
@@ -84,7 +131,8 @@ style: {style}{topic_line}
     # 스키마 검증 — 실패 시 ValueError raise → 라우터가 400/500 처리
     parsed = DraftOut.model_validate(llm_result["content"])
 
-    # sources 가 비면 입력 기사로 자동 채움
+    # sources 가 비면 입력 기사로 자동 채움 — 단, 경쟁 일간지는 제외
+    # (한국 편집 관행: 국내 일간지 간 상호 인용 지양)
     if not parsed.sources:
         parsed.sources = [
             SourceRef(
@@ -93,10 +141,12 @@ style: {style}{topic_line}
                 published_at=a.published_at.isoformat() if a.published_at else None,
             )
             for a in articles
+            if _source_tier(a.source_name) != "competitor"
         ]
 
-    # references 는 LLM 출력을 신뢰하지 않고 서버 검색 결과로 덮어쓴다 (투명성)
+    # references/background 는 LLM 출력을 신뢰하지 않고 서버 검색 결과로 덮어쓴다 (투명성)
     parsed.references = [_ref_to_source(r) for r in references]
+    parsed.background_sources = [_ref_to_source(r) for r in background]
     parsed.style_anchor = _ref_to_source(style_anchor) if style_anchor else None
 
     return {
@@ -143,26 +193,24 @@ def _dominant_category(articles: list[Article]) -> str | None:
     return counter.most_common(1)[0][0]
 
 
-async def _retrieve_references(
+async def _retrieve_by_tier(
     db: AsyncSession,
     keywords: list[str],
     exclude_ids: list[UUID],
+    tiers: tuple[str, ...],
+    top_n: int,
 ) -> list[dict]:
-    """자사 매체(서울신문) 기사 중 키워드 매칭 + recency 점수 상위 N건 반환.
+    """지정된 소스 층위 내에서 키워드 매칭 + recency 점수 상위 N건 반환.
 
+    tiers: ('own', 'agency') → references 용 / ('competitor',) → background 용
     Reranking: score = 0.6 × (키워드 매칭 수) + 0.4 × recency_score
-    recency_score ∈ [0, 1] — 최근일수록 1, 90일 경과 시 0.
     """
-    if not keywords:
+    if not keywords or not tiers:
         return []
 
     window_start = datetime.now(timezone.utc) - timedelta(days=_RECENCY_WINDOW_DAYS)
 
-    stmt = (
-        select(Article)
-        .where(Article.source_name.in_(OWN_SOURCE_NAMES))
-        .where(~Article.id.in_(exclude_ids))
-    )
+    stmt = select(Article).where(~Article.id.in_(exclude_ids))
     rows = list((await db.execute(stmt)).scalars().all())
     if not rows:
         return []
@@ -171,6 +219,8 @@ async def _retrieve_references(
     scored: list[tuple[float, Article, int]] = []
 
     for art in rows:
+        if _source_tier(art.source_name) not in tiers:
+            continue
         match_count = 0
         if art.analysis and art.analysis.keywords:
             match_count = len(kw_set & set(art.analysis.keywords))
@@ -181,7 +231,6 @@ async def _retrieve_references(
         if match_count == 0:
             continue
 
-        # recency
         pub = art.published_at or art.collected_at
         if pub and pub >= window_start:
             elapsed = (datetime.now(timezone.utc) - pub).total_seconds()
@@ -193,8 +242,7 @@ async def _retrieve_references(
         scored.append((score, art, match_count))
 
     scored.sort(key=lambda x: x[0], reverse=True)
-    top = scored[:_TOP_REFERENCES]
-    return [_article_to_dict(art) for _, art, _ in top]
+    return [_article_to_dict(art) for _, art, _ in scored[:top_n]]
 
 
 async def _retrieve_style_anchor(
@@ -261,19 +309,42 @@ def _build_articles_block(articles: list[Article]) -> str:
 
 def _build_references_block(refs: list[dict]) -> str:
     if not refs:
-        return "\n=== 자사 참고 기사 ===\n(매칭된 서울신문 자사 기사 없음)\n"
-    lines = ["\n=== 자사 참고 기사 (서울신문) — 인용 가능 ==="]
+        return "\n=== 자사·통신사 참고 기사 ===\n(매칭된 자사/통신사 기사 없음)\n"
+    lines = ["\n=== 자사·통신사 참고 기사 — 본문 인용 가능 ==="]
     for i, r in enumerate(refs, 1):
         pub = r.get("published_at") or "미상"
         snippet = (r.get("description") or "")[:_SNIPPET_CHARS_DESC]
+        tier = _source_tier(r["source_name"])
+        tier_mark = "자사" if tier == "own" else "통신사/외신"
         lines.append(
-            f"[R{i}] {r['title']}\n"
+            f"[R{i}] ({tier_mark}) {r['source_name']} — {r['title']}\n"
             f"     발행: {pub} · URL: {r['url']}\n"
             f"     요약: {snippet}"
         )
     lines.append(
-        "\n※ 위 참고 기사에 등장한 사실만 본문에 인용하고, 인용 시 '본사 보도에 따르면' 등"
-        " 표현과 함께 sources 에 반드시 포함하세요. 참고 기사에 없는 사실은 추측하지 마세요."
+        "\n※ 자사 기사는 '본사 보도에 따르면', 통신사·외신은 매체명(예: '연합뉴스에 따르면',"
+        " 'BBC에 따르면')으로 직접 인용하고 sources 에 반드시 포함하세요."
+        " 참고 기사에 없는 사실은 추측하지 마세요."
+    )
+    return "\n".join(lines)
+
+
+def _build_background_block(bgs: list[dict]) -> str:
+    """경쟁 일간지 기사 — 맥락 파악용. 본문 직접 인용 금지."""
+    if not bgs:
+        return ""
+    lines = ["\n=== 경쟁 일간지 맥락 (직접 인용 금지) ==="]
+    for i, r in enumerate(bgs, 1):
+        pub = r.get("published_at") or "미상"
+        snippet = (r.get("description") or "")[:_SNIPPET_CHARS_DESC]
+        lines.append(
+            f"[B{i}] {r['source_name']} — {r['title']} ({pub})\n"
+            f"     요약: {snippet}"
+        )
+    lines.append(
+        "\n※ 위는 다른 국내 일간지 보도입니다. 매체명 직접 인용을 하지 마세요."
+        " 사실 자체를 가져다 쓸 경우 '업계에 따르면', '관계자에 따르면' 또는 자사가"
+        " 별도로 확인한 사실처럼 서술하세요. sources 에는 절대 포함하지 마세요."
     )
     return "\n".join(lines)
 

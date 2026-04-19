@@ -73,7 +73,15 @@
   - `_boost_by_frequency` 를 DB-wide(오늘 기준)로 확장, **키워드별 고유 매체 수**로 가중
   - 속보 조건: `importance_score >= 8.5 AND source_count >= 2`
 
-### 3-2. Category Alignment in NLP Pipelines
+### 3-2. 국내 언론 관행 — 매체 간 상호 인용 회피
+- **관행 기반**: 한국 종합일간지 편집 관행상 (a) 자사 취재를 원칙으로 하고 (b) 통신사(연합뉴스, Reuters, AP 등)와 외신 일간지는 직접 인용 가능하지만 (c) **국내 경쟁 일간지(한겨레·조선·중앙·동아·한국경제 등)의 매체명 직접 인용은 거의 하지 않음**. 이유는 (i) 사실 확인 책임이 자사로 넘어오지 않음, (ii) 경쟁사 홍보 회피, (iii) 특종 분쟁 여지.
+- **우리 반영**:
+  - `drafter.py` 에 `OWN_SOURCE_NAMES` / `AGENCY_SOURCE_NAMES` / `COMPETITOR_DAILY_NAMES` 3층위 정의
+  - `_retrieve_by_tier()` 로 references(own+agency)와 background(competitor)를 분리 검색·주입
+  - `DRAFT_SYSTEM` 프롬프트에 "경쟁 일간지 직접 인용 금지, 익명 처리" 원칙 명시
+  - `DraftOut.background_sources[]` 로 투명 공개는 하되 본문·sources 에는 반영하지 않음
+
+### 3-3. Category Alignment in NLP Pipelines
 - **일반 원칙**: 분류 스키마를 단일 원천(single source of truth)으로 관리해 프롬프트·DB·UI 이탈 방지. 특히 `Literal` 기반 검증이 LLM 출력 정규화를 강제.
 - **우리 반영**:
   - `schemas.py` 의 `Category` Literal 이 단일 원천, `CATEGORIES` tuple 을 프롬프트에 f-string 주입
