@@ -175,6 +175,7 @@ export interface SchedulerData {
 export interface SourceRef {
   name: string;
   url: string;
+  published_at?: string | null;
 }
 
 export interface SixWCheck {
@@ -195,6 +196,8 @@ export interface DraftData {
   background: string;
   six_w_check: SixWCheck;
   sources: SourceRef[];
+  references: SourceRef[]; // RAG: 검색된 자사 참고 기사
+  style_anchor: SourceRef | null; // 톤 샘플 1건
   model_used: string;
   prompt_tokens: number;
   completion_tokens: number;

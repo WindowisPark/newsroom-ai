@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { FileEdit, Loader2 } from "lucide-react";
+import { FileEdit, Loader2, BookOpen, ExternalLink, Sparkles } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -184,6 +184,12 @@ export function DraftDialog({
               <SixWList check={draft.six_w_check} />
             </section>
 
+            {/* RAG: 참고한 자사 기사 (투명 공개) */}
+            <ReferencesPanel
+              references={draft.references || []}
+              anchor={draft.style_anchor || null}
+            />
+
             {/* 출처 */}
             {draft.sources.length > 0 && (
               <section>
@@ -288,6 +294,80 @@ function SixWList({ check }: { check: DraftData["six_w_check"] }) {
   );
 }
 
+function ReferencesPanel({
+  references,
+  anchor,
+}: {
+  references: DraftData["references"];
+  anchor: DraftData["style_anchor"];
+}) {
+  const nothing = references.length === 0 && !anchor;
+  return (
+    <section>
+      <h3 className="text-sm font-semibold mb-2 flex items-center gap-1.5">
+        <BookOpen className="size-3.5" />
+        참고한 자사 기사
+        {references.length > 0 && (
+          <Badge variant="secondary" className="text-[10px]">
+            {references.length}건
+          </Badge>
+        )}
+      </h3>
+      {nothing ? (
+        <p className="rounded border border-dashed p-3 text-xs text-muted-foreground">
+          매칭된 서울신문 자사 기사가 없어 참고 없이 작성되었습니다.
+        </p>
+      ) : (
+        <div className="space-y-2">
+          {references.map((r, i) => (
+            <a
+              key={i}
+              href={r.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-start gap-2 rounded border p-2 text-sm hover:bg-muted transition-colors"
+            >
+              <Badge variant="outline" className="shrink-0 mt-0.5">
+                R{i + 1}
+              </Badge>
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-1">
+                  <span className="font-medium truncate">{r.name}</span>
+                  <ExternalLink className="size-3 text-muted-foreground shrink-0" />
+                </div>
+                {r.published_at && (
+                  <div className="text-[11px] text-muted-foreground mt-0.5">
+                    발행 {new Date(r.published_at).toLocaleDateString("ko-KR")}
+                  </div>
+                )}
+                <div className="text-[11px] text-primary truncate mt-0.5">
+                  {r.url}
+                </div>
+              </div>
+            </a>
+          ))}
+          {anchor && (
+            <div className="flex items-start gap-2 rounded border border-dashed p-2 text-sm">
+              <Sparkles className="size-3.5 text-amber-500 mt-0.5 shrink-0" />
+              <div className="min-w-0 flex-1">
+                <div className="text-xs text-muted-foreground">톤 샘플 (문체 참고)</div>
+                <a
+                  href={anchor.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-xs text-primary hover:underline truncate block"
+                >
+                  {anchor.url}
+                </a>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+    </section>
+  );
+}
+
 function buildMarkdown(d: DraftData): string {
   const parts: string[] = [];
   parts.push(`# ${d.title_candidates[0] ?? "기사 초안"}`);
@@ -307,6 +387,15 @@ function buildMarkdown(d: DraftData): string {
     parts.push("");
     parts.push("## 출처");
     parts.push(...d.sources.map((s) => `- ${s.name}: ${s.url}`));
+  }
+  if (d.references && d.references.length > 0) {
+    parts.push("");
+    parts.push("## 참고한 자사 기사 (RAG)");
+    parts.push(
+      ...d.references.map(
+        (r) => `- ${r.name}${r.published_at ? ` (${r.published_at.slice(0, 10)})` : ""}: ${r.url}`
+      )
+    );
   }
   return parts.join("\n");
 }
