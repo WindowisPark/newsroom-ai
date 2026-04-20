@@ -373,22 +373,15 @@ function SectionHeader({
   num,
   title,
   meta,
-  accent,
 }: {
   id?: string;
   num: string;
   title: string;
   meta?: string;
-  accent?: "destructive";
 }) {
   return (
     <div className="mb-3 flex items-baseline justify-between border-b pb-1.5">
-      <h2
-        id={id}
-        className={`flex items-baseline gap-2 text-base font-bold ${
-          accent === "destructive" ? "text-destructive" : ""
-        }`}
-      >
+      <h2 id={id} className="flex items-baseline gap-2 text-base font-bold">
         <span className="font-bold text-primary">{num}</span>
         {title}
       </h2>

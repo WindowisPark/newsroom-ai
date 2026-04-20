@@ -2,18 +2,16 @@
 
 import { useEffect, useState, useCallback } from "react";
 import Link from "next/link";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   Newspaper,
-  TrendingUp,
   AlertCircle,
   AlertTriangle,
   RefreshCw,
   ArrowRight,
-  Clock,
   Search,
   X,
 } from "lucide-react";
@@ -21,7 +19,8 @@ import { getNews, getAgenda, getDashboardStats } from "@/lib/api";
 import { useSSE } from "@/lib/use-sse";
 import type { Article, AgendaData } from "@/lib/types";
 import { CopyButton } from "@/components/copy-button";
-import { CATEGORY_LABEL } from "@/lib/labels";
+import { ArticleRow } from "@/components/article-row";
+import { SectionHeader } from "@/components/section-header";
 
 interface DashboardStats {
   total_articles_today: number;
@@ -65,7 +64,6 @@ export default function DashboardPage() {
     }
   }, []);
 
-  // SSE 이벤트로 대시보드 자동 갱신
   useSSE(
     useCallback(
       (type: string, data: Record<string, unknown>) => {
@@ -90,7 +88,6 @@ export default function DashboardPage() {
 
   return (
     <div className="space-y-6">
-      {/* 주요 이슈 감지 배너 — LLM 중요도 임계 기반 */}
       {breakingAlert && (
         <div className="rounded-lg border-2 border-amber-400 bg-amber-50 p-4 flex items-center justify-between">
           <div className="flex items-center gap-3">
@@ -128,7 +125,6 @@ export default function DashboardPage() {
         </div>
       )}
 
-      {/* 뉴스룸 바이탈 — 얇은 가로 스트립 */}
       <div className="flex flex-wrap items-center gap-x-6 gap-y-2 border-b bg-muted/30 px-4 py-3 text-sm">
         <div className="flex items-center gap-2">
           <Newspaper className="size-4 text-primary" />
@@ -156,14 +152,8 @@ export default function DashboardPage() {
           </strong>
           <span className="text-muted-foreground">건</span>
         </div>
-        <div className="ml-auto flex items-center gap-2">
-          <Clock className="size-4 text-emerald-600" />
-          <span className="text-muted-foreground">시스템</span>
-          <strong className="font-semibold text-emerald-700">정상</strong>
-        </div>
       </div>
 
-      {/* 상위 키워드 */}
       {stats?.top_keywords && stats.top_keywords.length > 0 && (
         <Card size="sm">
           <CardContent>
@@ -180,20 +170,22 @@ export default function DashboardPage() {
       )}
 
       <div className="grid gap-6 lg:grid-cols-3">
-        {/* 최신 뉴스 */}
         <div className="lg:col-span-2 space-y-3">
-          <div className="flex items-center justify-between border-b pb-2">
-            <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-              최신 뉴스
-            </h2>
-            <Link href="/news" className="text-xs text-muted-foreground hover:text-primary flex items-center gap-1">
-              전체보기 <ArrowRight className="size-3" />
-            </Link>
-          </div>
+          <SectionHeader
+            label="최신 뉴스"
+            right={
+              <Link
+                href="/news"
+                className="text-xs text-muted-foreground hover:text-primary flex items-center gap-1"
+              >
+                전체보기 <ArrowRight className="size-3" />
+              </Link>
+            }
+          />
           {loading ? (
             <div className="space-y-3">
               {Array.from({ length: 5 }).map((_, i) => (
-                <Skeleton key={i} className="h-20 w-full rounded-xl" />
+                <Skeleton key={i} className="h-20 w-full rounded" />
               ))}
             </div>
           ) : articles.length === 0 ? (
@@ -204,62 +196,29 @@ export default function DashboardPage() {
             </Card>
           ) : (
             <div className="space-y-2">
-              {articles.map((article) => {
-                const isHigh = (article.analysis?.importance_score ?? 0) >= 8.0;
-                return (
-                  <Link key={article.id} href={`/news/${article.id}`}>
-                    <Card
-                      size="sm"
-                      className={`transition-colors hover:bg-muted/50 ${isHigh ? "border-l-4 border-l-primary bg-primary/5" : ""}`}
-                    >
-                      <CardContent>
-                        <div className="flex items-start justify-between gap-3">
-                          <div className="flex-1 min-w-0">
-                            <p className="font-medium leading-snug line-clamp-1">{article.title}</p>
-                            <p className="mt-1 text-xs text-muted-foreground line-clamp-1">
-                              {article.description}
-                            </p>
-                            <div className="mt-2 flex items-center gap-2">
-                              <span className="text-xs text-muted-foreground">{article.source_name}</span>
-                              <span className="text-xs text-muted-foreground">
-                                {new Date(article.published_at).toLocaleDateString("ko-KR")}
-                              </span>
-                            </div>
-                          </div>
-                          <div className="flex flex-col items-end gap-1 shrink-0">
-                            {isHigh && (
-                              <Badge variant="destructive" className="text-[10px]">중요</Badge>
-                            )}
-                            {article.analysis?.category && (
-                              <Badge variant="secondary" className="text-[10px]">
-                                {CATEGORY_LABEL[article.analysis.category] || article.analysis.category}
-                              </Badge>
-                            )}
-                          </div>
-                        </div>
-                      </CardContent>
-                    </Card>
-                  </Link>
-                );
-              })}
+              {articles.map((article) => (
+                <ArticleRow key={article.id} article={article} showDraft={false} />
+              ))}
             </div>
           )}
         </div>
 
-        {/* 의제 사이드바 */}
         <div className="space-y-3">
-          <div className="flex items-center justify-between border-b pb-2">
-            <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-              오늘의 의제
-            </h2>
-            <Link href="/analysis" className="text-xs text-muted-foreground hover:text-primary flex items-center gap-1">
-              상세 <ArrowRight className="size-3" />
-            </Link>
-          </div>
+          <SectionHeader
+            label="오늘의 의제"
+            right={
+              <Link
+                href="/analysis"
+                className="text-xs text-muted-foreground hover:text-primary flex items-center gap-1"
+              >
+                상세 <ArrowRight className="size-3" />
+              </Link>
+            }
+          />
           {loading ? (
             <div className="space-y-3">
               {Array.from({ length: 5 }).map((_, i) => (
-                <Skeleton key={i} className="h-16 w-full rounded-xl" />
+                <Skeleton key={i} className="h-16 w-full rounded" />
               ))}
             </div>
           ) : !agenda?.top_issues?.length ? (

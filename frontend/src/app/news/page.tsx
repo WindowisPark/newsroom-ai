@@ -18,19 +18,16 @@ import {
 } from "lucide-react";
 import { getNews, collectNews, getDashboardStats } from "@/lib/api";
 import type { Article, Meta } from "@/lib/types";
-import { CATEGORY_LABEL } from "@/lib/labels";
+import { CATEGORY_LABEL, CATEGORY_ORDER } from "@/lib/labels";
 import { relativeTime } from "@/lib/time";
+import { isHighImportance } from "@/lib/importance";
 import { DraftDialog } from "@/components/draft-dialog";
+import { ArticleRow } from "@/components/article-row";
+import { SectionHeader } from "@/components/section-header";
 
 const categories = [
   { value: "", label: "전체 카테고리" },
-  { value: "politics", label: "정치" },
-  { value: "economy", label: "경제" },
-  { value: "society", label: "사회" },
-  { value: "world", label: "국제" },
-  { value: "tech", label: "기술" },
-  { value: "culture", label: "문화" },
-  { value: "sports", label: "스포츠" },
+  ...CATEGORY_ORDER.map((k) => ({ value: k, label: CATEGORY_LABEL[k] })),
 ];
 
 const sortOptions = [
@@ -39,8 +36,7 @@ const sortOptions = [
   { value: "created_at", label: "수집순" },
 ];
 
-// 신문 섹션 순서 관례
-const CATEGORY_ORDER = ["politics", "economy", "society", "world", "tech", "culture", "sports"];
+const PER_SECTION_LIMIT = 5;
 
 interface Stats {
   total_articles_today: number;
@@ -69,7 +65,7 @@ export default function NewsPage() {
     try {
       const params: Record<string, string> = {
         page: String(page),
-        limit: showStructured ? "30" : "20",
+        limit: "30",
         sort_by: sortBy,
       };
       if (query) params.q = query;
@@ -82,7 +78,7 @@ export default function NewsPage() {
     } finally {
       setLoading(false);
     }
-  }, [page, query, category, sortBy, showStructured]);
+  }, [page, query, category, sortBy]);
 
   const fetchStats = useCallback(async () => {
     try {
@@ -121,7 +117,6 @@ export default function NewsPage() {
     fetchArticles();
   }
 
-  // 구조화 뷰 — Top 3 히어로 + 나머지를 카테고리 그룹핑
   const { hero, grouped } = useMemo(() => {
     if (!showStructured) return { hero: [] as Article[], grouped: [] as [string, Article[]][] };
     const hero = articles.slice(0, 3);
@@ -133,9 +128,11 @@ export default function NewsPage() {
     }
     const grouped: [string, Article[]][] = [];
     for (const k of CATEGORY_ORDER) {
-      if (byCat[k]?.length) grouped.push([k, byCat[k]]);
+      if (byCat[k]?.length) grouped.push([k, byCat[k].slice(0, PER_SECTION_LIMIT)]);
     }
-    if (byCat["unknown"]?.length) grouped.push(["unknown", byCat["unknown"]]);
+    if (byCat.unknown?.length) {
+      grouped.push(["unknown", byCat.unknown.slice(0, PER_SECTION_LIMIT)]);
+    }
     return { hero, grouped };
   }, [articles, showStructured]);
 
@@ -156,7 +153,6 @@ export default function NewsPage() {
         </Button>
       </div>
 
-      {/* 요약 스트립 */}
       {stats && (
         <div className="flex flex-wrap items-center gap-x-4 gap-y-1 rounded-lg border bg-muted/40 px-4 py-2.5 text-sm">
           <span>
@@ -177,7 +173,6 @@ export default function NewsPage() {
         </div>
       )}
 
-      {/* Filters */}
       <div className="flex flex-wrap items-center gap-3">
         <form onSubmit={handleSearch} className="flex items-center gap-2">
           <div className="relative">
@@ -218,7 +213,6 @@ export default function NewsPage() {
         </div>
       )}
 
-      {/* Article list */}
       {loading ? (
         <div className="space-y-3">
           {Array.from({ length: 6 }).map((_, i) => (
@@ -233,10 +227,9 @@ export default function NewsPage() {
         </Card>
       ) : showStructured ? (
         <div className="space-y-8">
-          {/* Top 3 히어로 — 1면 주요 기사 */}
           {hero.length > 0 && (
             <section>
-              <SectionHeader label="1면 주요 기사" count={hero.length} />
+              <SectionHeader label="1면 주요 기사" meta={`${hero.length}건`} />
               <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
                 {hero.map((a) => (
                   <HeroCard key={a.id} article={a} />
@@ -245,12 +238,11 @@ export default function NewsPage() {
             </section>
           )}
 
-          {/* 카테고리 섹션 */}
           {grouped.map(([cat, list]) => (
             <section key={cat}>
               <SectionHeader
                 label={cat === "unknown" ? "기타" : CATEGORY_LABEL[cat] ?? cat}
-                count={list.length}
+                meta={`${list.length}건`}
               />
               <div className="space-y-2">
                 {list.map((a) => (
@@ -268,7 +260,6 @@ export default function NewsPage() {
         </div>
       )}
 
-      {/* Pagination — 필터 적용 시에만 */}
       {!showStructured && totalPages > 1 && (
         <div className="flex items-center justify-center gap-2">
           <Button
@@ -296,23 +287,11 @@ export default function NewsPage() {
   );
 }
 
-// ── Section Header (신문 섹션 구분 규약) ──
-
-function SectionHeader({ label, count }: { label: string; count: number }) {
-  return (
-    <div className="mb-3 flex items-baseline justify-between border-b pb-1.5">
-      <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-        {label}
-      </h2>
-      <span className="text-xs text-muted-foreground">{count}건</span>
-    </div>
-  );
-}
-
-// ── Hero Card — 1면 주요 기사용 확대 카드 ──
-
+// HeroCard — /news 페이지에만 사용되는 1면 히어로 타일. ArticleRow 와 layout
+// 차이(3-col grid, border-top accent, 3-line title clamp)가 커서 로컬 유지.
 function HeroCard({ article }: { article: Article }) {
-  const isHigh = (article.analysis?.importance_score ?? 0) >= 8.0;
+  const isHigh = isHighImportance(article);
+  const published = useMemo(() => relativeTime(article.published_at), [article.published_at]);
   return (
     <Card
       size="sm"
@@ -329,7 +308,10 @@ function HeroCard({ article }: { article: Article }) {
         >
           <div className="flex items-start gap-1.5">
             {isHigh && (
-              <AlertTriangle className="size-4 text-primary shrink-0 mt-0.5" />
+              <AlertTriangle
+                className="size-4 text-primary shrink-0 mt-0.5"
+                aria-label="중요 기사"
+              />
             )}
             <p className="font-bold leading-snug line-clamp-3 text-base">
               {article.title}
@@ -342,69 +324,9 @@ function HeroCard({ article }: { article: Article }) {
         <div className="flex items-center justify-between gap-2 pt-1 border-t border-border/50">
           <div className="flex flex-col text-xs text-muted-foreground">
             <span>{article.source_name}</span>
-            <span>{relativeTime(article.published_at)}</span>
+            <span>{published}</span>
           </div>
           <div className="flex items-center gap-1.5">
-            {article.analysis?.category && (
-              <Badge variant="secondary" className="text-[10px]">
-                {CATEGORY_LABEL[article.analysis.category] || article.analysis.category}
-              </Badge>
-            )}
-            <DraftDialog
-              articleIds={[article.id]}
-              topicHint={article.title}
-              triggerLabel="초안"
-              triggerSize="sm"
-              triggerVariant="outline"
-            />
-          </div>
-        </div>
-      </CardContent>
-    </Card>
-  );
-}
-
-// ── Article Row — 카테고리 섹션 / flat list 공용 ──
-
-function ArticleRow({ article }: { article: Article }) {
-  const isHigh = (article.analysis?.importance_score ?? 0) >= 8.0;
-  return (
-    <Card
-      size="sm"
-      className={
-        isHigh
-          ? "border-l-4 border-l-primary bg-primary/5 transition-colors"
-          : "transition-colors hover:bg-muted/40"
-      }
-    >
-      <CardContent>
-        <div className="flex items-start justify-between gap-4">
-          <Link
-            href={`/news/${article.id}`}
-            className="flex-1 min-w-0 block hover:text-primary"
-          >
-            <div className="flex items-center gap-1.5">
-              {isHigh && (
-                <AlertTriangle className="size-3.5 text-primary shrink-0" />
-              )}
-              <p className="font-medium leading-snug line-clamp-1">
-                {article.title}
-              </p>
-            </div>
-            <p className="mt-1 text-sm text-muted-foreground line-clamp-2">
-              {article.description}
-            </p>
-            <div className="mt-2 flex items-center gap-3 text-xs text-muted-foreground">
-              <span>{article.source_name}</span>
-              <span>{relativeTime(article.published_at)}</span>
-            </div>
-          </Link>
-          <div className="flex flex-col items-end gap-1.5 shrink-0">
-            {isHigh && (
-              <Badge className="text-[10px] bg-primary/10 text-primary border-primary/30">
-                중요
-              </Badge>
-            )}
             {article.analysis?.category && (
               <Badge variant="secondary" className="text-[10px]">
                 {CATEGORY_LABEL[article.analysis.category] || article.analysis.category}
