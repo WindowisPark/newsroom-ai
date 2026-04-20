@@ -22,10 +22,6 @@ import { CopyButton } from "@/components/copy-button";
 import { DraftDialog } from "@/components/draft-dialog";
 import { CATEGORY_LABEL } from "@/lib/labels";
 
-const sentimentLabel: Record<string, string> = {
-  positive: "긍정", negative: "부정", neutral: "중립",
-};
-
 const entityIcon: Record<string, typeof User> = {
   person: User,
   organization: Building2,
@@ -138,12 +134,6 @@ export default function NewsDetailPage({ params }: { params: Promise<{ id: strin
             <div className="flex flex-wrap gap-2">
               <Badge variant="secondary">
                 {CATEGORY_LABEL[article.analysis.category] || article.analysis.category}
-              </Badge>
-              <Badge variant={article.analysis.sentiment === "positive" ? "default" : article.analysis.sentiment === "negative" ? "destructive" : "outline"}>
-                {sentimentLabel[article.analysis.sentiment]}
-              </Badge>
-              <Badge variant="outline">
-                중요도 {article.analysis.importance_score.toFixed(1)}/10
               </Badge>
             </div>
 

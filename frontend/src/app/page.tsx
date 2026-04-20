@@ -23,12 +23,6 @@ import type { Article, AgendaData } from "@/lib/types";
 import { CopyButton } from "@/components/copy-button";
 import { CATEGORY_LABEL } from "@/lib/labels";
 
-const sentimentColor = {
-  positive: "bg-emerald-100 text-emerald-700",
-  negative: "bg-red-100 text-red-700",
-  neutral: "bg-zinc-100 text-zinc-700",
-} as const;
-
 interface DashboardStats {
   total_articles_today: number;
   unanalyzed_count: number;
@@ -96,22 +90,22 @@ export default function DashboardPage() {
 
   return (
     <div className="space-y-6">
-      {/* 속보 배너 */}
+      {/* 주요 이슈 감지 배너 — LLM 중요도 임계 기반 */}
       {breakingAlert && (
-        <div className="animate-pulse rounded-lg border-2 border-red-500 bg-red-50 p-4 flex items-center justify-between">
+        <div className="rounded-lg border-2 border-amber-400 bg-amber-50 p-4 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <AlertTriangle className="size-5 text-red-600 shrink-0" />
+            <AlertTriangle className="size-5 text-amber-600 shrink-0" />
             <div>
-              <p className="font-bold text-red-800">
-                속보 {breakingAlert.count}건 감지
+              <p className="font-semibold text-amber-900">
+                주요 기사 {breakingAlert.count}건 감지
               </p>
-              <p className="text-sm text-red-600 line-clamp-1">
+              <p className="text-sm text-amber-700 line-clamp-1">
                 {breakingAlert.titles[0]}
               </p>
             </div>
           </div>
           <Button variant="ghost" size="icon-sm" onClick={() => setBreakingAlert(null)}>
-            <X className="size-4 text-red-400" />
+            <X className="size-4 text-amber-500" />
           </Button>
         </div>
       )}
@@ -147,18 +141,15 @@ export default function DashboardPage() {
             </div>
           </CardContent>
         </Card>
-        <Card size="sm" className={stats?.breaking_count ? "ring-2 ring-red-400" : ""}>
+        <Card size="sm">
           <CardContent className="flex items-center gap-3">
-            <div className={`rounded-lg p-2 ${stats?.breaking_count ? "bg-red-100" : "bg-amber-100"}`}>
-              <AlertTriangle className={`size-4 ${stats?.breaking_count ? "text-red-600" : "text-amber-600"}`} />
+            <div className="rounded-lg bg-amber-100 p-2">
+              <AlertTriangle className="size-4 text-amber-600" />
             </div>
             <div>
-              <p className="text-xs text-muted-foreground">주요/속보</p>
+              <p className="text-xs text-muted-foreground">중요 기사</p>
               <p className="text-lg font-semibold">
                 {stats?.high_importance_count ?? "—"}건
-                {stats?.breaking_count ? (
-                  <span className="ml-1 text-sm text-red-600">({stats.breaking_count} 속보)</span>
-                ) : null}
               </p>
             </div>
           </CardContent>
@@ -259,11 +250,6 @@ export default function DashboardPage() {
                                 {CATEGORY_LABEL[article.analysis.category] || article.analysis.category}
                               </Badge>
                             )}
-                            {article.analysis?.sentiment && (
-                              <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${sentimentColor[article.analysis.sentiment]}`}>
-                                {article.analysis.sentiment === "positive" ? "긍정" : article.analysis.sentiment === "negative" ? "부정" : "중립"}
-                              </span>
-                            )}
                           </div>
                         </div>
                       </CardContent>
@@ -309,10 +295,10 @@ export default function DashboardPage() {
                         <p className="mt-0.5 text-xs text-muted-foreground line-clamp-2">{issue.summary}</p>
                         <div className="mt-1.5 flex items-center gap-2">
                           <span className="text-[10px] text-muted-foreground">
-                            기사 {issue.article_count}건
+                            매체 {issue.source_count}곳
                           </span>
                           <span className="text-[10px] text-muted-foreground">
-                            중요도 {issue.importance_score.toFixed(1)}
+                            기사 {issue.article_count}건
                           </span>
                         </div>
                       </div>

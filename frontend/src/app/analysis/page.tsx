@@ -132,7 +132,6 @@ function AgendaTab() {
                     <div className="flex gap-4 text-xs text-muted-foreground">
                       <span>기사 {issue.article_count}건</span>
                       <span>매체 {issue.source_count}곳</span>
-                      <span>중요도 {issue.importance_score.toFixed(1)}</span>
                     </div>
                     <div className="flex flex-wrap items-center gap-2 pt-1">
                       <CopyButton
@@ -343,7 +342,6 @@ function TrendsTab() {
           <SelectContent>
             <SelectItem value="keyword">키워드</SelectItem>
             <SelectItem value="category">카테고리</SelectItem>
-            <SelectItem value="sentiment">감성</SelectItem>
           </SelectContent>
         </Select>
         <Button variant="outline" size="sm" onClick={load} disabled={loading}>

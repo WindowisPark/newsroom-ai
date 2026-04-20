@@ -31,24 +31,11 @@ const categories = [
   { value: "sports", label: "스포츠" },
 ];
 
-const sentiments = [
-  { value: "", label: "전체 감성" },
-  { value: "positive", label: "긍정" },
-  { value: "negative", label: "부정" },
-  { value: "neutral", label: "중립" },
-];
-
 const sortOptions = [
   { value: "importance", label: "중요도순" },
   { value: "published_at", label: "최신순" },
   { value: "created_at", label: "수집순" },
 ];
-
-const sentimentStyle: Record<string, string> = {
-  positive: "bg-emerald-100 text-emerald-700",
-  negative: "bg-red-100 text-red-700",
-  neutral: "bg-zinc-100 text-zinc-700",
-};
 
 export default function NewsPage() {
   const [articles, setArticles] = useState<Article[]>([]);
@@ -60,7 +47,6 @@ export default function NewsPage() {
   const [page, setPage] = useState(1);
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState("");
-  const [sentiment, setSentiment] = useState("");
   const [sortBy, setSortBy] = useState("importance");
 
   const fetchArticles = useCallback(async () => {
@@ -74,7 +60,6 @@ export default function NewsPage() {
       };
       if (query) params.q = query;
       if (category) params.category = category;
-      if (sentiment) params.sentiment = sentiment;
       const res = await getNews(params);
       setArticles(res.data);
       setMeta(res.meta ?? null);
@@ -83,7 +68,7 @@ export default function NewsPage() {
     } finally {
       setLoading(false);
     }
-  }, [page, query, category, sentiment, sortBy]);
+  }, [page, query, category, sortBy]);
 
   useEffect(() => {
     fetchArticles();
@@ -149,15 +134,6 @@ export default function NewsPage() {
           </SelectContent>
         </Select>
 
-        <Select value={sentiment} onValueChange={(v) => { setSentiment(v as string); setPage(1); }}>
-          <SelectTrigger><SelectValue placeholder="전체 감성" /></SelectTrigger>
-          <SelectContent>
-            {sentiments.map((s) => (
-              <SelectItem key={s.value} value={s.value}>{s.label}</SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-
         <Select value={sortBy} onValueChange={(v) => { setSortBy(v as string); setPage(1); }}>
           <SelectTrigger><SelectValue /></SelectTrigger>
           <SelectContent>
@@ -216,16 +192,6 @@ export default function NewsPage() {
                         <Badge variant="secondary" className="text-[10px]">
                           {CATEGORY_LABEL[article.analysis.category] || article.analysis.category}
                         </Badge>
-                      )}
-                      {article.analysis?.sentiment && (
-                        <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${sentimentStyle[article.analysis.sentiment]}`}>
-                          {article.analysis.sentiment === "positive" ? "긍정" : article.analysis.sentiment === "negative" ? "부정" : "중립"}
-                        </span>
-                      )}
-                      {article.analysis?.importance_score != null && (
-                        <span className="text-[10px] text-muted-foreground">
-                          중요도 {article.analysis.importance_score.toFixed(1)}
-                        </span>
                       )}
                     </div>
                   </div>

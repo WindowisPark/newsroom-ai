@@ -16,7 +16,7 @@ const eventConfig: Record<string, { icon: typeof Bell; label: string }> = {
   new_articles: { icon: Newspaper, label: "새 기사 수집" },
   analysis_complete: { icon: BarChart3, label: "분석 완료" },
   report_generated: { icon: FileText, label: "리포트 생성" },
-  breaking_alert: { icon: AlertTriangle, label: "속보 감지" },
+  breaking_alert: { icon: AlertTriangle, label: "주요 기사 감지" },
   watchlist_match: { icon: Bookmark, label: "워치리스트 매칭" },
 };
 
@@ -34,7 +34,7 @@ export function Notifications() {
       const reportType = data.type === "briefing" ? "브리핑" : "의제 분석";
       message = `${reportType} 리포트가 자동 생성되었습니다.`;
     } else if (type === "breaking_alert") {
-      message = `속보 ${data.count ?? 0}건 감지: ${(data.titles as string[])?.[0] ?? ""}`;
+      message = `주요 기사 ${data.count ?? 0}건 감지: ${(data.titles as string[])?.[0] ?? ""}`;
     } else if (type === "watchlist_match") {
       message = `워치리스트 매칭: "${data.keyword ?? ""}" → ${data.article_title ?? ""}`;
     } else {

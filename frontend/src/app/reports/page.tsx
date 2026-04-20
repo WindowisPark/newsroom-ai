@@ -294,15 +294,14 @@ export default function ReportsPage() {
         </section>
       )}
 
-      {/* ③ 속보 */}
+      {/* ③ 주목 기사 — LLM 중요도 임계 이상 */}
       {breaking.length > 0 && (
         <section aria-labelledby="sec-breaking">
           <SectionHeader
             id="sec-breaking"
             num="③"
-            title="속보 감지"
+            title="주목 기사"
             meta={`중요도 ${BREAKING_THRESHOLD}+ · ${breaking.length}건`}
-            accent="destructive"
           />
           <div className="space-y-2">
             {breaking.map((article) => (
@@ -430,7 +429,6 @@ function AgendaCard({ issue }: { issue: AgendaIssue }) {
             <div className="flex gap-3 text-xs text-muted-foreground">
               <span>매체 {issue.source_count}곳</span>
               <span>기사 {issue.article_count}건</span>
-              <span>중요도 {issue.importance_score.toFixed(1)}</span>
             </div>
             <div className="flex flex-wrap items-center gap-2 pt-1">
               <CopyButton value={copyValue} size="sm" label="복사" variant="ghost" />
@@ -452,12 +450,11 @@ function AgendaCard({ issue }: { issue: AgendaIssue }) {
 
 function BreakingCard({ article }: { article: Article }) {
   const pub = new Date(article.published_at || article.collected_at).toLocaleTimeString("ko-KR");
-  const score = article.analysis?.importance_score ?? 0;
   return (
-    <Card className="border-destructive/40">
+    <Card className="border-amber-300">
       <CardContent>
         <div className="flex items-start gap-3">
-          <AlertTriangle className="size-5 shrink-0 text-destructive mt-0.5" />
+          <AlertTriangle className="size-5 shrink-0 text-amber-600 mt-0.5" />
           <div className="flex-1 min-w-0 space-y-1.5">
             <Link
               href={`/news/${article.id}`}
@@ -469,10 +466,6 @@ function BreakingCard({ article }: { article: Article }) {
               <span>{article.source_name}</span>
               <span>·</span>
               <span>{pub}</span>
-              <span>·</span>
-              <Badge variant="destructive" className="text-[10px]">
-                중요도 {score.toFixed(1)}
-              </Badge>
             </div>
             {article.description && (
               <p className="text-sm text-muted-foreground line-clamp-2">
