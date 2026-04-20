@@ -120,10 +120,10 @@ export default function NewsPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex items-end justify-between border-b pb-3">
         <div>
-          <h1 className="text-2xl font-bold">뉴스</h1>
-          <p className="text-sm text-muted-foreground">
+          <h1 className="text-3xl font-bold tracking-tight">뉴스</h1>
+          <p className="mt-1 text-sm text-muted-foreground">
             {meta ? `필터 ${meta.total}건` : "수집된 뉴스 기사"}
           </p>
         </div>
@@ -218,7 +218,7 @@ export default function NewsPage() {
                 size="sm"
                 className={
                   isHigh
-                    ? "border-l-4 border-l-amber-400 bg-amber-50/60 transition-colors"
+                    ? "border-l-4 border-l-primary bg-primary/5 transition-colors"
                     : "transition-colors hover:bg-muted/40"
                 }
               >
@@ -230,7 +230,7 @@ export default function NewsPage() {
                     >
                       <div className="flex items-center gap-1.5">
                         {isHigh && (
-                          <AlertTriangle className="size-3.5 text-amber-600 shrink-0" />
+                          <AlertTriangle className="size-3.5 text-primary shrink-0" />
                         )}
                         <p className="font-medium leading-snug line-clamp-1">
                           {article.title}
@@ -246,7 +246,7 @@ export default function NewsPage() {
                     </Link>
                     <div className="flex flex-col items-end gap-1.5 shrink-0">
                       {isHigh && (
-                        <Badge className="text-[10px] bg-amber-100 text-amber-900 border-amber-300">
+                        <Badge className="text-[10px] bg-primary/10 text-primary border-primary/30">
                           중요
                         </Badge>
                       )}

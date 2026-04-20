@@ -110,10 +110,10 @@ export default function DashboardPage() {
         </div>
       )}
 
-      <div className="flex items-center justify-between">
+      <div className="flex items-end justify-between border-b pb-3">
         <div>
-          <h1 className="text-2xl font-bold">대시보드</h1>
-          <p className="text-sm text-muted-foreground">AI 뉴스룸 종합 현황</p>
+          <h1 className="text-3xl font-bold tracking-tight">대시보드</h1>
+          <p className="mt-1 text-sm text-muted-foreground">AI 뉴스룸 종합 현황</p>
         </div>
         <Button variant="outline" size="sm" onClick={loadData} disabled={loading}>
           <RefreshCw className={`size-4 ${loading ? "animate-spin" : ""}`} />
@@ -128,56 +128,39 @@ export default function DashboardPage() {
         </div>
       )}
 
-      {/* 핵심 메트릭 카드 */}
-      <div className="grid gap-4 md:grid-cols-4">
-        <Card size="sm">
-          <CardContent className="flex items-center gap-3">
-            <div className="rounded-lg bg-blue-100 p-2">
-              <Newspaper className="size-4 text-blue-600" />
-            </div>
-            <div>
-              <p className="text-xs text-muted-foreground">오늘 수집</p>
-              <p className="text-lg font-semibold">{stats?.total_articles_today ?? "—"}건</p>
-            </div>
-          </CardContent>
-        </Card>
-        <Card size="sm">
-          <CardContent className="flex items-center gap-3">
-            <div className="rounded-lg bg-amber-100 p-2">
-              <AlertTriangle className="size-4 text-amber-600" />
-            </div>
-            <div>
-              <p className="text-xs text-muted-foreground">중요 기사</p>
-              <p className="text-lg font-semibold">
-                {stats?.high_importance_count ?? "—"}건
-              </p>
-            </div>
-          </CardContent>
-        </Card>
-        <Card size="sm" className={stats?.unanalyzed_count ? "ring-2 ring-amber-300" : ""}>
-          <CardContent className="flex items-center gap-3">
-            <div className={`rounded-lg p-2 ${stats?.unanalyzed_count ? "bg-amber-100" : "bg-emerald-100"}`}>
-              <Search className={`size-4 ${stats?.unanalyzed_count ? "text-amber-600" : "text-emerald-600"}`} />
-            </div>
-            <div>
-              <p className="text-xs text-muted-foreground">미분석</p>
-              <p className="text-lg font-semibold">
-                {stats?.unanalyzed_count ?? "—"}건
-              </p>
-            </div>
-          </CardContent>
-        </Card>
-        <Card size="sm">
-          <CardContent className="flex items-center gap-3">
-            <div className="rounded-lg bg-emerald-100 p-2">
-              <Clock className="size-4 text-emerald-600" />
-            </div>
-            <div>
-              <p className="text-xs text-muted-foreground">시스템</p>
-              <p className="text-lg font-semibold">정상</p>
-            </div>
-          </CardContent>
-        </Card>
+      {/* 뉴스룸 바이탈 — 얇은 가로 스트립 */}
+      <div className="flex flex-wrap items-center gap-x-6 gap-y-2 border-b bg-muted/30 px-4 py-3 text-sm">
+        <div className="flex items-center gap-2">
+          <Newspaper className="size-4 text-primary" />
+          <span className="text-muted-foreground">오늘 수집</span>
+          <strong className="font-semibold text-foreground">
+            {stats?.total_articles_today ?? "—"}
+          </strong>
+          <span className="text-muted-foreground">건</span>
+        </div>
+        <span className="text-muted-foreground">·</span>
+        <div className="flex items-center gap-2">
+          <AlertTriangle className="size-4 text-amber-600" />
+          <span className="text-muted-foreground">중요</span>
+          <strong className="font-semibold text-foreground">
+            {stats?.high_importance_count ?? "—"}
+          </strong>
+          <span className="text-muted-foreground">건</span>
+        </div>
+        <span className="text-muted-foreground">·</span>
+        <div className="flex items-center gap-2">
+          <Search className="size-4 text-muted-foreground" />
+          <span className="text-muted-foreground">미분석</span>
+          <strong className="font-semibold text-foreground">
+            {stats?.unanalyzed_count ?? "—"}
+          </strong>
+          <span className="text-muted-foreground">건</span>
+        </div>
+        <div className="ml-auto flex items-center gap-2">
+          <Clock className="size-4 text-emerald-600" />
+          <span className="text-muted-foreground">시스템</span>
+          <strong className="font-semibold text-emerald-700">정상</strong>
+        </div>
       </div>
 
       {/* 상위 키워드 */}
@@ -198,10 +181,12 @@ export default function DashboardPage() {
 
       <div className="grid gap-6 lg:grid-cols-3">
         {/* 최신 뉴스 */}
-        <div className="lg:col-span-2 space-y-4">
-          <div className="flex items-center justify-between">
-            <h2 className="text-lg font-semibold">최신 뉴스</h2>
-            <Link href="/news" className="text-sm text-muted-foreground hover:text-foreground flex items-center gap-1">
+        <div className="lg:col-span-2 space-y-3">
+          <div className="flex items-center justify-between border-b pb-2">
+            <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+              최신 뉴스
+            </h2>
+            <Link href="/news" className="text-xs text-muted-foreground hover:text-primary flex items-center gap-1">
               전체보기 <ArrowRight className="size-3" />
             </Link>
           </div>
@@ -225,7 +210,7 @@ export default function DashboardPage() {
                   <Link key={article.id} href={`/news/${article.id}`}>
                     <Card
                       size="sm"
-                      className={`transition-colors hover:bg-muted/50 ${isHigh ? "border-l-4 border-l-red-500 bg-red-50/30" : ""}`}
+                      className={`transition-colors hover:bg-muted/50 ${isHigh ? "border-l-4 border-l-primary bg-primary/5" : ""}`}
                     >
                       <CardContent>
                         <div className="flex items-start justify-between gap-3">
@@ -262,10 +247,12 @@ export default function DashboardPage() {
         </div>
 
         {/* 의제 사이드바 */}
-        <div className="space-y-4">
-          <div className="flex items-center justify-between">
-            <h2 className="text-lg font-semibold">오늘의 의제</h2>
-            <Link href="/analysis" className="text-sm text-muted-foreground hover:text-foreground flex items-center gap-1">
+        <div className="space-y-3">
+          <div className="flex items-center justify-between border-b pb-2">
+            <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+              오늘의 의제
+            </h2>
+            <Link href="/analysis" className="text-xs text-muted-foreground hover:text-primary flex items-center gap-1">
               상세 <ArrowRight className="size-3" />
             </Link>
           </div>

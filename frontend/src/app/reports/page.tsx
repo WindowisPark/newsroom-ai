@@ -179,11 +179,11 @@ export default function ReportsPage() {
 
   return (
     <div className="mx-auto max-w-3xl space-y-8">
-      {/* Header */}
-      <header className="space-y-3">
+      {/* Header — 신문 1면 헤드 규약 */}
+      <header className="space-y-3 border-b pb-4">
         <div className="flex items-start justify-between gap-4">
           <div>
-            <h1 className="text-3xl font-bold">📰 오늘의 뉴스룸 보고</h1>
+            <h1 className="text-3xl font-bold tracking-tight">오늘의 뉴스룸 보고</h1>
             <p className="mt-1 text-sm text-muted-foreground">
               AI 자동 수집·분석 결과를 한 장으로 확인합니다.
             </p>
@@ -245,7 +245,9 @@ export default function ReportsPage() {
           <SectionHeader id="sec-briefing" num="①" title="헤드라인 & 종합 요약" />
           <Card>
             <CardHeader>
-              <CardTitle className="text-xl">{briefing.briefing.headline}</CardTitle>
+              <CardTitle className="text-2xl font-bold tracking-tight leading-tight">
+                {briefing.briefing.headline}
+              </CardTitle>
             </CardHeader>
             <CardContent>
               <p className="text-sm leading-relaxed whitespace-pre-wrap">
@@ -380,14 +382,14 @@ function SectionHeader({
   accent?: "destructive";
 }) {
   return (
-    <div className="mb-3 flex items-baseline justify-between">
+    <div className="mb-3 flex items-baseline justify-between border-b pb-1.5">
       <h2
         id={id}
-        className={`flex items-baseline gap-2 text-base font-semibold ${
+        className={`flex items-baseline gap-2 text-base font-bold ${
           accent === "destructive" ? "text-destructive" : ""
         }`}
       >
-        <span className="text-muted-foreground">{num}</span>
+        <span className="font-bold text-primary">{num}</span>
         {title}
       </h2>
       {meta && <span className="text-xs text-muted-foreground">{meta}</span>}

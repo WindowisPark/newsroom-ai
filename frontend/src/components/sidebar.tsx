@@ -30,9 +30,14 @@ export function Sidebar() {
 
   return (
     <aside className="fixed inset-y-0 left-0 z-30 flex w-56 flex-col border-r bg-sidebar">
-      <div className="flex h-14 items-center gap-2 border-b px-4">
-        <Newspaper className="size-5 text-primary" />
-        <span className="text-base font-semibold">Newsroom AI</span>
+      <div className="flex h-14 items-center gap-2.5 border-b px-4">
+        <Newspaper className="size-4 shrink-0 text-primary" />
+        <div className="flex flex-col leading-tight">
+          <span className="text-sm font-bold tracking-tight text-primary">서울신문</span>
+          <span className="text-[9px] font-medium uppercase tracking-widest text-muted-foreground">
+            AI 뉴스룸
+          </span>
+        </div>
       </div>
       <nav className="flex-1 space-y-1 p-2">
         {navItems.map((item) => {
