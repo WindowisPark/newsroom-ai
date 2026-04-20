@@ -25,3 +25,6 @@ Thumbs.db
 # Database
 *.db
 *.sqlite3
+
+# Claude Code local state
+.claude/
