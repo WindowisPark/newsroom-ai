@@ -75,29 +75,34 @@ async def call_llm(
 
 
 def _parse_json(text: str) -> dict:
-    """텍스트에서 JSON 추출"""
-    # 직접 파싱 시도
-    try:
-        return json.loads(text)
-    except json.JSONDecodeError:
-        pass
+    """텍스트에서 JSON 추출 — 코드펜스/설명 텍스트 래핑 대응."""
+    candidates: list[str] = []
 
-    # 코드 블록에서 추출
-    import re
-    match = re.search(r"```(?:json)?\s*\n?(.*?)\n?```", text, re.DOTALL)
-    if match:
-        try:
-            return json.loads(match.group(1))
-        except json.JSONDecodeError:
-            pass
+    stripped = text.strip()
 
-    # 중괄호 범위로 추출
-    start = text.find("{")
-    end = text.rfind("}") + 1
+    # 1) 원문 그대로
+    candidates.append(stripped)
+
+    # 2) ```json ... ``` 또는 ``` ... ``` 코드펜스 안쪽 (닫는 펜스 없어도 OK)
+    if stripped.startswith("```"):
+        body = stripped
+        first_nl = body.find("\n")
+        if first_nl > 0:
+            body = body[first_nl + 1 :]
+        if body.rstrip().endswith("```"):
+            body = body.rstrip()[:-3]
+        candidates.append(body.strip())
+
+    # 3) 첫 `{` ~ 마지막 `}` 범위
+    start = stripped.find("{")
+    end = stripped.rfind("}") + 1
     if start != -1 and end > start:
+        candidates.append(stripped[start:end])
+
+    for c in candidates:
         try:
-            return json.loads(text[start:end])
+            return json.loads(c)
         except json.JSONDecodeError:
-            pass
+            continue
 
     return {"raw_text": text, "parse_error": True}
