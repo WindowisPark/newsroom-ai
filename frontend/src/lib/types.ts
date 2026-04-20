@@ -243,6 +243,17 @@ export interface FactIssue {
   acknowledged_note: string | null;
 }
 
+export interface ArticleDraftSummary {
+  id: string;
+  title: string;
+  lead: string;
+  status: ArticleDraftStatus;
+  category: string | null;
+  updated_at: string;
+  review_note: string | null;
+  references_count: number;
+}
+
 export interface ArticleDraftItem {
   id: string;
   title: string;

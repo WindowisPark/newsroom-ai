@@ -17,6 +17,7 @@ import { Badge } from "@/components/ui/badge";
 import { CopyButton } from "@/components/copy-button";
 import { generateDraft, createArticleDraft } from "@/lib/api";
 import type { DraftData, DraftStyle } from "@/lib/types";
+import { buildArticleMarkdown } from "@/lib/markdown";
 
 interface DraftDialogProps {
   articleIds: string[];
@@ -103,7 +104,20 @@ export function DraftDialog({
     }
   };
 
-  const fullMarkdown = draft ? buildMarkdown(draft) : "";
+  const fullMarkdown = draft
+    ? buildArticleMarkdown({
+        title: draft.title_candidates[0] ?? "기사 초안",
+        subtitle:
+          draft.title_candidates.length > 1
+            ? `제목 후보: ${draft.title_candidates.slice(1).join(" / ")}`
+            : undefined,
+        lead: draft.lead,
+        body: draft.body,
+        background: draft.background,
+        sources: draft.sources,
+        references: draft.references,
+      })
+    : "";
 
   return (
     <>
@@ -470,34 +484,3 @@ function ReferencesPanel({
   );
 }
 
-function buildMarkdown(d: DraftData): string {
-  const parts: string[] = [];
-  parts.push(`# ${d.title_candidates[0] ?? "기사 초안"}`);
-  if (d.title_candidates.length > 1) {
-    parts.push(`> 제목 후보: ${d.title_candidates.slice(1).join(" / ")}`);
-  }
-  parts.push("");
-  parts.push(d.lead);
-  parts.push("");
-  parts.push(d.body);
-  if (d.background) {
-    parts.push("");
-    parts.push("## 맥락 · 배경");
-    parts.push(d.background);
-  }
-  if (d.sources.length > 0) {
-    parts.push("");
-    parts.push("## 출처");
-    parts.push(...d.sources.map((s) => `- ${s.name}: ${s.url}`));
-  }
-  if (d.references && d.references.length > 0) {
-    parts.push("");
-    parts.push("## 참고한 자사 기사 (RAG)");
-    parts.push(
-      ...d.references.map(
-        (r) => `- ${r.name}${r.published_at ? ` (${r.published_at.slice(0, 10)})` : ""}: ${r.url}`
-      )
-    );
-  }
-  return parts.join("\n");
-}

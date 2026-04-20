@@ -38,11 +38,7 @@ import type {
 import { CopyButton } from "@/components/copy-button";
 import { DraftDialog } from "@/components/draft-dialog";
 import { useSSE } from "@/lib/use-sse";
-
-const categoryLabel: Record<string, string> = {
-  politics: "정치", economy: "경제", society: "사회",
-  world: "국제", tech: "기술", culture: "문화", sports: "스포츠",
-};
+import { CATEGORY_LABEL } from "@/lib/labels";
 
 const trendIcon: Record<string, typeof TrendingUp> = {
   rising: TrendingUp,
@@ -62,7 +58,7 @@ function buildBriefingMarkdown(data: BriefingData): string {
   parts.push(briefing.summary);
   for (const section of briefing.sections) {
     parts.push("");
-    parts.push(`## ${section.title} (${categoryLabel[section.category] || section.category})`);
+    parts.push(`## ${section.title} (${CATEGORY_LABEL[section.category] || section.category})`);
     parts.push(section.content);
   }
   return parts.join("\n");
@@ -86,7 +82,7 @@ function buildMailtoUrl(data: BriefingData, agenda: AgendaData | null): string {
   }
   bodyLines.push("[분야별 브리핑]");
   for (const s of briefing.sections) {
-    bodyLines.push(`- ${s.title} (${categoryLabel[s.category] || s.category})`);
+    bodyLines.push(`- ${s.title} (${CATEGORY_LABEL[s.category] || s.category})`);
   }
   bodyLines.push("");
   bodyLines.push("상세는 사내 대시보드에서 확인하세요.");
@@ -344,7 +340,7 @@ export default function ReportsPage() {
                   <div className="flex items-center justify-between gap-2">
                     <div className="flex items-center gap-2">
                       <Badge variant="secondary">
-                        {categoryLabel[section.category] || section.category}
+                        {CATEGORY_LABEL[section.category] || section.category}
                       </Badge>
                       <CardTitle className="text-base">{section.title}</CardTitle>
                     </div>

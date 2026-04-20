@@ -15,6 +15,7 @@ import type {
   WatchlistItem,
   ArticleDraftItem,
   ArticleDraftStatus,
+  ArticleDraftSummary,
 } from "./types";
 
 const BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1";
@@ -155,7 +156,7 @@ export async function deleteWatchlist(id: string) {
 // Article Drafts (예비 기사 / 편집실)
 export async function listArticleDrafts(status?: ArticleDraftStatus) {
   const query = status ? `?status=${status}` : "";
-  return fetchAPI<ArticleDraftItem[]>(`/article-drafts${query}`);
+  return fetchAPI<ArticleDraftSummary[]>(`/article-drafts${query}`);
 }
 
 export async function getArticleDraft(id: string) {

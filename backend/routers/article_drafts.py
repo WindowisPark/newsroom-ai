@@ -25,6 +25,7 @@ from backend.database.models import Article, ArticleDraft
 from backend.models.schemas import APIResponse
 
 logger = logging.getLogger(__name__)
+
 router = APIRouter(prefix="/article-drafts", tags=["article-drafts"])
 
 
@@ -35,6 +36,20 @@ _ALLOWED_TRANSITIONS: dict[str, set[str]] = {
     "approved":  {"draft"},                   # (수정 원할 시 초안으로 복귀)
     "rejected":  {"draft"},                   # 재작성
 }
+
+
+def _serialize_summary(d: ArticleDraft) -> dict:
+    """리스트 뷰 전용 — 무거운 JSONB 필드(body, fact_issues 등) 제외."""
+    return {
+        "id": str(d.id),
+        "title": d.title,
+        "lead": d.lead,
+        "status": d.status,
+        "category": d.category,
+        "updated_at": d.updated_at,
+        "review_note": d.review_note,
+        "references_count": len(d.references or []),
+    }
 
 
 def _serialize(d: ArticleDraft) -> dict:
@@ -110,7 +125,7 @@ async def list_drafts(
     if status:
         stmt = stmt.where(ArticleDraft.status == status)
     rows = (await db.execute(stmt)).scalars().all()
-    return APIResponse(data=[_serialize(d) for d in rows])
+    return APIResponse(data=[_serialize_summary(d) for d in rows])
 
 
 @router.post("", response_model=APIResponse)

@@ -21,11 +21,7 @@ import { getNews, getAgenda, getDashboardStats } from "@/lib/api";
 import { useSSE } from "@/lib/use-sse";
 import type { Article, AgendaData } from "@/lib/types";
 import { CopyButton } from "@/components/copy-button";
-
-const categoryLabel: Record<string, string> = {
-  politics: "정치", economy: "경제", society: "사회",
-  world: "국제", tech: "기술", culture: "문화", sports: "스포츠",
-};
+import { CATEGORY_LABEL } from "@/lib/labels";
 
 const sentimentColor = {
   positive: "bg-emerald-100 text-emerald-700",
@@ -260,7 +256,7 @@ export default function DashboardPage() {
                             )}
                             {article.analysis?.category && (
                               <Badge variant="secondary" className="text-[10px]">
-                                {categoryLabel[article.analysis.category] || article.analysis.category}
+                                {CATEGORY_LABEL[article.analysis.category] || article.analysis.category}
                               </Badge>
                             )}
                             {article.analysis?.sentiment && (

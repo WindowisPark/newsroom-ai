@@ -9,33 +9,17 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import {
   Newspaper,
   FileText,
-  Clock,
-  CheckCircle2,
-  XCircle,
   AlertCircle,
   ArrowRight,
 } from "lucide-react";
 
 import { listArticleDrafts } from "@/lib/api";
-import type { ArticleDraftItem, ArticleDraftStatus } from "@/lib/types";
-
-const categoryLabel: Record<string, string> = {
-  politics: "정치", economy: "경제", society: "사회",
-  world: "국제", tech: "기술", culture: "문화", sports: "스포츠",
-};
-
-const STATUS_META: Record<
-  ArticleDraftStatus,
-  { label: string; tabLabel: string; icon: typeof FileText; color: string }
-> = {
-  draft: { label: "초안", tabLabel: "내 초안", icon: FileText, color: "text-muted-foreground" },
-  in_review: { label: "결재 대기", tabLabel: "결재 대기", icon: Clock, color: "text-amber-600" },
-  approved: { label: "게시 완료", tabLabel: "게시 완료", icon: CheckCircle2, color: "text-emerald-600" },
-  rejected: { label: "반려", tabLabel: "반려", icon: XCircle, color: "text-destructive" },
-};
+import type { ArticleDraftStatus, ArticleDraftSummary } from "@/lib/types";
+import { CATEGORY_LABEL } from "@/lib/labels";
+import { STATUS_LABEL, STATUS_TAB } from "@/lib/draft-status";
 
 export default function NewsroomPage() {
-  const [items, setItems] = useState<ArticleDraftItem[]>([]);
+  const [items, setItems] = useState<ArticleDraftSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -80,16 +64,16 @@ export default function NewsroomPage() {
       <Tabs defaultValue="draft">
         <TabsList variant="line">
           <TabsTrigger value="draft">
-            {STATUS_META.draft.tabLabel} ({byStatus("draft").length})
+            {STATUS_TAB.draft.tabLabel} ({byStatus("draft").length})
           </TabsTrigger>
           <TabsTrigger value="in_review">
-            {STATUS_META.in_review.tabLabel} ({byStatus("in_review").length})
+            {STATUS_TAB.in_review.tabLabel} ({byStatus("in_review").length})
           </TabsTrigger>
           <TabsTrigger value="approved">
-            {STATUS_META.approved.tabLabel} ({byStatus("approved").length})
+            {STATUS_TAB.approved.tabLabel} ({byStatus("approved").length})
           </TabsTrigger>
           <TabsTrigger value="rejected">
-            {STATUS_META.rejected.tabLabel} ({byStatus("rejected").length})
+            {STATUS_TAB.rejected.tabLabel} ({byStatus("rejected").length})
           </TabsTrigger>
         </TabsList>
         {(["draft", "in_review", "approved", "rejected"] as ArticleDraftStatus[]).map((s) => (
@@ -112,7 +96,7 @@ function StatusList({
   loading,
 }: {
   status: ArticleDraftStatus;
-  items: ArticleDraftItem[];
+  items: ArticleDraftSummary[];
   loading: boolean;
 }) {
   if (loading) {
@@ -148,9 +132,9 @@ function StatusList({
   );
 }
 
-function ArticleDraftCard({ item }: { item: ArticleDraftItem }) {
-  const meta = STATUS_META[item.status];
-  const Icon = meta.icon;
+function ArticleDraftCard({ item }: { item: ArticleDraftSummary }) {
+  const tab = STATUS_TAB[item.status];
+  const Icon = tab.icon;
   const updated = new Date(item.updated_at).toLocaleString("ko-KR");
   return (
     <Link href={`/newsroom/${item.id}`} className="block">
@@ -163,12 +147,12 @@ function ArticleDraftCard({ item }: { item: ArticleDraftItem }) {
                   variant={item.status === "approved" ? "default" : "outline"}
                   className="text-[10px]"
                 >
-                  <Icon className={`size-3 ${meta.color}`} />
-                  <span className="ml-1">{meta.label}</span>
+                  <Icon className={`size-3 ${tab.color}`} />
+                  <span className="ml-1">{STATUS_LABEL[item.status]}</span>
                 </Badge>
                 {item.category && (
                   <Badge variant="secondary" className="text-[10px]">
-                    {categoryLabel[item.category] || item.category}
+                    {CATEGORY_LABEL[item.category] || item.category}
                   </Badge>
                 )}
               </div>
@@ -178,8 +162,8 @@ function ArticleDraftCard({ item }: { item: ArticleDraftItem }) {
               </p>
               <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
                 <span>업데이트 {updated}</span>
-                {item.references.length > 0 && (
-                  <span>참고 {item.references.length}건</span>
+                {item.references_count > 0 && (
+                  <span>참고 {item.references_count}건</span>
                 )}
                 {item.review_note && (
                   <span className="italic">메모: {item.review_note.slice(0, 30)}</span>

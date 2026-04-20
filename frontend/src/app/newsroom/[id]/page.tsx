@@ -44,21 +44,9 @@ import type {
   FactIssueSeverity,
 } from "@/lib/types";
 import { CopyButton } from "@/components/copy-button";
-
-const categoryLabel: Record<string, string> = {
-  politics: "정치", economy: "경제", society: "사회",
-  world: "국제", tech: "기술", culture: "문화", sports: "스포츠",
-};
-
-const STATUS_META: Record<
-  ArticleDraftStatus,
-  { label: string; className: string }
-> = {
-  draft: { label: "초안", className: "bg-muted text-muted-foreground" },
-  in_review: { label: "결재 대기", className: "bg-amber-100 text-amber-800" },
-  approved: { label: "게시 완료", className: "bg-emerald-100 text-emerald-800" },
-  rejected: { label: "반려", className: "bg-destructive/10 text-destructive" },
-};
+import { CATEGORY_LABEL } from "@/lib/labels";
+import { STATUS_BADGE_CLASS, STATUS_LABEL } from "@/lib/draft-status";
+import { buildArticleMarkdown } from "@/lib/markdown";
 
 const SEVERITY_ORDER: Record<FactIssueSeverity, number> = { high: 0, medium: 1, low: 2 };
 
@@ -222,7 +210,6 @@ export default function NewsroomDetailPage({
 
   if (!item) return null;
 
-  const meta = STATUS_META[item.status];
   const canEdit = item.status === "draft" || item.status === "rejected";
   const canSubmit = item.status === "draft";
   const canApproveReject = item.status === "in_review";
@@ -242,9 +229,9 @@ export default function NewsroomDetailPage({
             <ArrowLeft className="size-4" /> 편집실
           </Button>
         </Link>
-        <Badge className={meta.className}>
+        <Badge className={STATUS_BADGE_CLASS[item.status]}>
           <FileText className="size-3" />
-          <span className="ml-1">{meta.label}</span>
+          <span className="ml-1">{STATUS_LABEL[item.status]}</span>
         </Badge>
       </div>
 
@@ -259,7 +246,7 @@ export default function NewsroomDetailPage({
       <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
         {item.category && (
           <Badge variant="secondary">
-            {categoryLabel[item.category] || item.category}
+            {CATEGORY_LABEL[item.category] || item.category}
           </Badge>
         )}
         <span className="flex items-center gap-1">
@@ -465,7 +452,14 @@ export default function NewsroomDetailPage({
       {/* Copy action */}
       <div className="flex gap-2">
         <CopyButton
-          value={buildMarkdown(item)}
+          value={buildArticleMarkdown({
+            title: item.title,
+            subtitle: `서울신문 편집국 · ${new Date(item.created_at).toLocaleDateString("ko-KR")} · 상태: ${item.status}`,
+            lead: item.lead,
+            body: item.body,
+            background: item.background,
+            sources: item.sources,
+          })}
           label="Markdown 복사"
           variant="outline"
         />
@@ -666,24 +660,3 @@ function FactCheckCard({
   );
 }
 
-function buildMarkdown(item: ArticleDraftItem): string {
-  const parts: string[] = [];
-  parts.push(`# ${item.title}`);
-  parts.push("");
-  parts.push(`> 서울신문 편집국 · ${new Date(item.created_at).toLocaleDateString("ko-KR")} · 상태: ${item.status}`);
-  parts.push("");
-  parts.push(item.lead);
-  parts.push("");
-  parts.push(item.body);
-  if (item.background) {
-    parts.push("");
-    parts.push("## 맥락 · 배경");
-    parts.push(item.background);
-  }
-  if (item.sources.length > 0) {
-    parts.push("");
-    parts.push("## 출처");
-    parts.push(...item.sources.map((s) => `- ${s.name}: ${s.url}`));
-  }
-  return parts.join("\n");
-}

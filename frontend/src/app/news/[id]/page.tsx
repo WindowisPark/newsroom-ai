@@ -20,11 +20,7 @@ import { getNewsDetail } from "@/lib/api";
 import type { Article } from "@/lib/types";
 import { CopyButton } from "@/components/copy-button";
 import { DraftDialog } from "@/components/draft-dialog";
-
-const categoryLabel: Record<string, string> = {
-  politics: "정치", economy: "경제", society: "사회",
-  world: "국제", tech: "기술", culture: "문화", sports: "스포츠",
-};
+import { CATEGORY_LABEL } from "@/lib/labels";
 
 const sentimentLabel: Record<string, string> = {
   positive: "긍정", negative: "부정", neutral: "중립",
@@ -141,7 +137,7 @@ export default function NewsDetailPage({ params }: { params: Promise<{ id: strin
           <CardContent className="space-y-4">
             <div className="flex flex-wrap gap-2">
               <Badge variant="secondary">
-                {categoryLabel[article.analysis.category] || article.analysis.category}
+                {CATEGORY_LABEL[article.analysis.category] || article.analysis.category}
               </Badge>
               <Badge variant={article.analysis.sentiment === "positive" ? "default" : article.analysis.sentiment === "negative" ? "destructive" : "outline"}>
                 {sentimentLabel[article.analysis.sentiment]}
