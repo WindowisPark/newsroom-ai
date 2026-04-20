@@ -10,15 +10,17 @@ import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   Search,
-  RefreshCw,
   ChevronLeft,
   ChevronRight,
   Download,
   AlertCircle,
+  AlertTriangle,
 } from "lucide-react";
-import { getNews, collectNews } from "@/lib/api";
+import { getNews, collectNews, getDashboardStats } from "@/lib/api";
 import type { Article, Meta } from "@/lib/types";
 import { CATEGORY_LABEL } from "@/lib/labels";
+import { relativeTime } from "@/lib/time";
+import { DraftDialog } from "@/components/draft-dialog";
 
 const categories = [
   { value: "", label: "전체 카테고리" },
@@ -37,9 +39,16 @@ const sortOptions = [
   { value: "created_at", label: "수집순" },
 ];
 
+interface Stats {
+  total_articles_today: number;
+  unanalyzed_count: number;
+  high_importance_count: number;
+}
+
 export default function NewsPage() {
   const [articles, setArticles] = useState<Article[]>([]);
   const [meta, setMeta] = useState<Meta | null>(null);
+  const [stats, setStats] = useState<Stats | null>(null);
   const [loading, setLoading] = useState(true);
   const [collecting, setCollecting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -70,9 +79,22 @@ export default function NewsPage() {
     }
   }, [page, query, category, sortBy]);
 
+  const fetchStats = useCallback(async () => {
+    try {
+      const res = await getDashboardStats();
+      setStats(res.data);
+    } catch {
+      /* 통계 실패는 무시 — 핵심 목록은 별도 경로 */
+    }
+  }, []);
+
   useEffect(() => {
     fetchArticles();
   }, [fetchArticles]);
+
+  useEffect(() => {
+    fetchStats();
+  }, [fetchStats]);
 
   async function handleCollect() {
     setCollecting(true);
@@ -80,6 +102,7 @@ export default function NewsPage() {
       const res = await collectNews();
       alert(`수집 완료: 신규 ${res.data.new_count}건 / 중복 ${res.data.duplicate_count}건`);
       fetchArticles();
+      fetchStats();
     } catch {
       alert("수집 중 오류가 발생했습니다.");
     } finally {
@@ -101,7 +124,7 @@ export default function NewsPage() {
         <div>
           <h1 className="text-2xl font-bold">뉴스</h1>
           <p className="text-sm text-muted-foreground">
-            {meta ? `총 ${meta.total}건` : "수집된 뉴스 기사"}
+            {meta ? `필터 ${meta.total}건` : "수집된 뉴스 기사"}
           </p>
         </div>
         <Button variant="outline" size="sm" onClick={handleCollect} disabled={collecting}>
@@ -109,6 +132,27 @@ export default function NewsPage() {
           수동 수집
         </Button>
       </div>
+
+      {/* 요약 스트립 — 오늘의 전체 맥락 */}
+      {stats && (
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 rounded-lg border bg-muted/40 px-4 py-2.5 text-sm">
+          <span>
+            오늘 수집 <strong className="text-foreground">{stats.total_articles_today}</strong>건
+          </span>
+          <span className="text-muted-foreground">·</span>
+          <span>
+            중요 <strong className="text-foreground">{stats.high_importance_count}</strong>건
+          </span>
+          {stats.unanalyzed_count > 0 && (
+            <>
+              <span className="text-muted-foreground">·</span>
+              <span className="text-muted-foreground">
+                미분석 {stats.unanalyzed_count}건
+              </span>
+            </>
+          )}
+        </div>
+      )}
 
       {/* Filters */}
       <div className="flex flex-wrap items-center gap-3">
@@ -169,36 +213,60 @@ export default function NewsPage() {
           {articles.map((article) => {
             const isHigh = (article.analysis?.importance_score ?? 0) >= 8.0;
             return (
-            <Link key={article.id} href={`/news/${article.id}`}>
-              <Card size="sm" className={`transition-colors hover:bg-muted/50 ${isHigh ? "border-l-4 border-l-red-500 bg-red-50/30" : ""}`}>
+              <Card
+                key={article.id}
+                size="sm"
+                className={
+                  isHigh
+                    ? "border-l-4 border-l-amber-400 bg-amber-50/60 transition-colors"
+                    : "transition-colors hover:bg-muted/40"
+                }
+              >
                 <CardContent>
                   <div className="flex items-start justify-between gap-4">
-                    <div className="flex-1 min-w-0">
-                      <p className="font-medium leading-snug line-clamp-1">{article.title}</p>
+                    <Link
+                      href={`/news/${article.id}`}
+                      className="flex-1 min-w-0 block hover:text-primary"
+                    >
+                      <div className="flex items-center gap-1.5">
+                        {isHigh && (
+                          <AlertTriangle className="size-3.5 text-amber-600 shrink-0" />
+                        )}
+                        <p className="font-medium leading-snug line-clamp-1">
+                          {article.title}
+                        </p>
+                      </div>
                       <p className="mt-1 text-sm text-muted-foreground line-clamp-2">
                         {article.description}
                       </p>
                       <div className="mt-2 flex items-center gap-3 text-xs text-muted-foreground">
                         <span>{article.source_name}</span>
-                        <span>{article.source_type === "domestic" ? "국내" : "해외"}</span>
-                        <span>{new Date(article.published_at).toLocaleString("ko-KR")}</span>
+                        <span>{relativeTime(article.published_at)}</span>
                       </div>
-                    </div>
+                    </Link>
                     <div className="flex flex-col items-end gap-1.5 shrink-0">
                       {isHigh && (
-                        <Badge variant="destructive" className="text-[10px]">중요</Badge>
+                        <Badge className="text-[10px] bg-amber-100 text-amber-900 border-amber-300">
+                          중요
+                        </Badge>
                       )}
                       {article.analysis?.category && (
                         <Badge variant="secondary" className="text-[10px]">
                           {CATEGORY_LABEL[article.analysis.category] || article.analysis.category}
                         </Badge>
                       )}
+                      <DraftDialog
+                        articleIds={[article.id]}
+                        topicHint={article.title}
+                        triggerLabel="초안"
+                        triggerSize="sm"
+                        triggerVariant="outline"
+                      />
                     </div>
                   </div>
                 </CardContent>
               </Card>
-            </Link>
-          );
+            );
           })}
         </div>
       )}
