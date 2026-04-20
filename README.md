@@ -89,6 +89,10 @@ DATABASE_URL=postgresql+asyncpg://postgres.[ref]:[pw]@aws-0-ap-northeast-2.poole
 
 주요 설계 결정(자사 RAG 3 계층 인용 정책, 팩트검증 3 검증기, HITL ack 워크플로) 은 모두 개발자가 판단·검토했으며, LLM 이 제안한 코드도 전부 실제로 빌드·실행해 확인했습니다.
 
+## 배포
+
+무료 티어로 올리는 레시피(Supabase + Fly.io + Vercel) 는 [`docs/DEPLOY.md`](docs/DEPLOY.md) 참조. 루트의 `fly.toml` 이 백엔드 배포 설정을 담고 있음.
+
 ## 개발 환경(Docker 없이)
 
 ```bash
