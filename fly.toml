@@ -1,41 +1,30 @@
-# Fly.io 배포 설정 — 백엔드(FastAPI) 전용.
-# 프론트엔드는 Vercel 에 별도 배포. Postgres 는 Supabase(외부) 사용.
+# fly.toml app configuration file generated for newsroom-ai-backend on 2026-04-20T18:37:01+09:00
 #
-# 최초 배포 플로우:
-#   fly launch --copy-config --no-deploy   # app name 입력 (예: newsroom-ai-backend)
-#   fly secrets set ANTHROPIC_API_KEY=...
-#   fly secrets set DATABASE_URL='postgresql+asyncpg://postgres.[ref]:[pw]@aws-0-ap-northeast-2.pooler.supabase.com:5432/postgres'
-#   fly secrets set CORS_ORIGINS='["https://<프론트-vercel-도메인>"]'
-#   fly deploy
+# See https://fly.io/docs/reference/configuration/ for information about how to use this file.
 #
-# 참고:
-#   * Supabase 는 Session pooler(5432) 권장. Transaction pooler(6543) 는 asyncpg
-#     prepared statement 와 충돌해 statement_cache_size=0 추가 설정이 필요함.
-#   * APScheduler 가 always-on 이므로 auto_stop_machines 를 꺼두고
-#     min_machines_running=1 로 항상 1대 유지.
 
-app = "newsroom-ai-backend"
-primary_region = "nrt"  # Tokyo
+app = 'newsroom-ai-backend'
+primary_region = 'nrt'
 
 [build]
-  dockerfile = "backend/Dockerfile"
+  dockerfile = 'backend/Dockerfile'
 
 [http_service]
   internal_port = 8000
   force_https = true
+  auto_stop_machines = 'off'
   auto_start_machines = true
-  auto_stop_machines = "off"
   min_machines_running = 1
-  processes = ["app"]
+  processes = ['app']
 
   [[http_service.checks]]
-    interval = "30s"
-    timeout = "5s"
-    grace_period = "20s"
-    method = "GET"
-    path = "/api/v1/health"
+    interval = '30s'
+    timeout = '5s'
+    grace_period = '20s'
+    method = 'GET'
+    path = '/api/v1/health'
 
 [[vm]]
-  cpu_kind = "shared"
+  memory = '512mb'
   cpus = 1
   memory_mb = 512
