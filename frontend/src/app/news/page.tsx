@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useMemo } from "react";
 import Link from "next/link";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -39,6 +39,9 @@ const sortOptions = [
   { value: "created_at", label: "수집순" },
 ];
 
+// 신문 섹션 순서 관례
+const CATEGORY_ORDER = ["politics", "economy", "society", "world", "tech", "culture", "sports"];
+
 interface Stats {
   total_articles_today: number;
   unanalyzed_count: number;
@@ -58,13 +61,15 @@ export default function NewsPage() {
   const [category, setCategory] = useState("");
   const [sortBy, setSortBy] = useState("importance");
 
+  const showStructured = !query && !category && page === 1;
+
   const fetchArticles = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
       const params: Record<string, string> = {
         page: String(page),
-        limit: "20",
+        limit: showStructured ? "30" : "20",
         sort_by: sortBy,
       };
       if (query) params.q = query;
@@ -77,14 +82,14 @@ export default function NewsPage() {
     } finally {
       setLoading(false);
     }
-  }, [page, query, category, sortBy]);
+  }, [page, query, category, sortBy, showStructured]);
 
   const fetchStats = useCallback(async () => {
     try {
       const res = await getDashboardStats();
       setStats(res.data);
     } catch {
-      /* 통계 실패는 무시 — 핵심 목록은 별도 경로 */
+      /* 통계 실패는 무시 */
     }
   }, []);
 
@@ -116,6 +121,24 @@ export default function NewsPage() {
     fetchArticles();
   }
 
+  // 구조화 뷰 — Top 3 히어로 + 나머지를 카테고리 그룹핑
+  const { hero, grouped } = useMemo(() => {
+    if (!showStructured) return { hero: [] as Article[], grouped: [] as [string, Article[]][] };
+    const hero = articles.slice(0, 3);
+    const rest = articles.slice(3);
+    const byCat: Record<string, Article[]> = {};
+    for (const a of rest) {
+      const k = a.analysis?.category ?? "unknown";
+      (byCat[k] ??= []).push(a);
+    }
+    const grouped: [string, Article[]][] = [];
+    for (const k of CATEGORY_ORDER) {
+      if (byCat[k]?.length) grouped.push([k, byCat[k]]);
+    }
+    if (byCat["unknown"]?.length) grouped.push(["unknown", byCat["unknown"]]);
+    return { hero, grouped };
+  }, [articles, showStructured]);
+
   const totalPages = meta ? Math.ceil(meta.total / meta.limit) : 1;
 
   return (
@@ -133,7 +156,7 @@ export default function NewsPage() {
         </Button>
       </div>
 
-      {/* 요약 스트립 — 오늘의 전체 맥락 */}
+      {/* 요약 스트립 */}
       {stats && (
         <div className="flex flex-wrap items-center gap-x-4 gap-y-1 rounded-lg border bg-muted/40 px-4 py-2.5 text-sm">
           <span>
@@ -198,8 +221,8 @@ export default function NewsPage() {
       {/* Article list */}
       {loading ? (
         <div className="space-y-3">
-          {Array.from({ length: 10 }).map((_, i) => (
-            <Skeleton key={i} className="h-24 w-full rounded-xl" />
+          {Array.from({ length: 6 }).map((_, i) => (
+            <Skeleton key={i} className="h-24 w-full rounded" />
           ))}
         </div>
       ) : articles.length === 0 ? (
@@ -208,71 +231,45 @@ export default function NewsPage() {
             조건에 맞는 뉴스가 없습니다.
           </CardContent>
         </Card>
+      ) : showStructured ? (
+        <div className="space-y-8">
+          {/* Top 3 히어로 — 1면 주요 기사 */}
+          {hero.length > 0 && (
+            <section>
+              <SectionHeader label="1면 주요 기사" count={hero.length} />
+              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                {hero.map((a) => (
+                  <HeroCard key={a.id} article={a} />
+                ))}
+              </div>
+            </section>
+          )}
+
+          {/* 카테고리 섹션 */}
+          {grouped.map(([cat, list]) => (
+            <section key={cat}>
+              <SectionHeader
+                label={cat === "unknown" ? "기타" : CATEGORY_LABEL[cat] ?? cat}
+                count={list.length}
+              />
+              <div className="space-y-2">
+                {list.map((a) => (
+                  <ArticleRow key={a.id} article={a} />
+                ))}
+              </div>
+            </section>
+          ))}
+        </div>
       ) : (
         <div className="space-y-2">
-          {articles.map((article) => {
-            const isHigh = (article.analysis?.importance_score ?? 0) >= 8.0;
-            return (
-              <Card
-                key={article.id}
-                size="sm"
-                className={
-                  isHigh
-                    ? "border-l-4 border-l-primary bg-primary/5 transition-colors"
-                    : "transition-colors hover:bg-muted/40"
-                }
-              >
-                <CardContent>
-                  <div className="flex items-start justify-between gap-4">
-                    <Link
-                      href={`/news/${article.id}`}
-                      className="flex-1 min-w-0 block hover:text-primary"
-                    >
-                      <div className="flex items-center gap-1.5">
-                        {isHigh && (
-                          <AlertTriangle className="size-3.5 text-primary shrink-0" />
-                        )}
-                        <p className="font-medium leading-snug line-clamp-1">
-                          {article.title}
-                        </p>
-                      </div>
-                      <p className="mt-1 text-sm text-muted-foreground line-clamp-2">
-                        {article.description}
-                      </p>
-                      <div className="mt-2 flex items-center gap-3 text-xs text-muted-foreground">
-                        <span>{article.source_name}</span>
-                        <span>{relativeTime(article.published_at)}</span>
-                      </div>
-                    </Link>
-                    <div className="flex flex-col items-end gap-1.5 shrink-0">
-                      {isHigh && (
-                        <Badge className="text-[10px] bg-primary/10 text-primary border-primary/30">
-                          중요
-                        </Badge>
-                      )}
-                      {article.analysis?.category && (
-                        <Badge variant="secondary" className="text-[10px]">
-                          {CATEGORY_LABEL[article.analysis.category] || article.analysis.category}
-                        </Badge>
-                      )}
-                      <DraftDialog
-                        articleIds={[article.id]}
-                        topicHint={article.title}
-                        triggerLabel="초안"
-                        triggerSize="sm"
-                        triggerVariant="outline"
-                      />
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-            );
-          })}
+          {articles.map((a) => (
+            <ArticleRow key={a.id} article={a} />
+          ))}
         </div>
       )}
 
-      {/* Pagination */}
-      {totalPages > 1 && (
+      {/* Pagination — 필터 적용 시에만 */}
+      {!showStructured && totalPages > 1 && (
         <div className="flex items-center justify-center gap-2">
           <Button
             variant="outline"
@@ -296,5 +293,133 @@ export default function NewsPage() {
         </div>
       )}
     </div>
+  );
+}
+
+// ── Section Header (신문 섹션 구분 규약) ──
+
+function SectionHeader({ label, count }: { label: string; count: number }) {
+  return (
+    <div className="mb-3 flex items-baseline justify-between border-b pb-1.5">
+      <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+        {label}
+      </h2>
+      <span className="text-xs text-muted-foreground">{count}건</span>
+    </div>
+  );
+}
+
+// ── Hero Card — 1면 주요 기사용 확대 카드 ──
+
+function HeroCard({ article }: { article: Article }) {
+  const isHigh = (article.analysis?.importance_score ?? 0) >= 8.0;
+  return (
+    <Card
+      size="sm"
+      className={
+        isHigh
+          ? "border-t-4 border-t-primary bg-primary/5 transition-colors"
+          : "transition-colors hover:bg-muted/40"
+      }
+    >
+      <CardContent className="flex h-full flex-col gap-2">
+        <Link
+          href={`/news/${article.id}`}
+          className="flex-1 min-w-0 block hover:text-primary"
+        >
+          <div className="flex items-start gap-1.5">
+            {isHigh && (
+              <AlertTriangle className="size-4 text-primary shrink-0 mt-0.5" />
+            )}
+            <p className="font-bold leading-snug line-clamp-3 text-base">
+              {article.title}
+            </p>
+          </div>
+          <p className="mt-2 text-sm text-muted-foreground line-clamp-3">
+            {article.description}
+          </p>
+        </Link>
+        <div className="flex items-center justify-between gap-2 pt-1 border-t border-border/50">
+          <div className="flex flex-col text-xs text-muted-foreground">
+            <span>{article.source_name}</span>
+            <span>{relativeTime(article.published_at)}</span>
+          </div>
+          <div className="flex items-center gap-1.5">
+            {article.analysis?.category && (
+              <Badge variant="secondary" className="text-[10px]">
+                {CATEGORY_LABEL[article.analysis.category] || article.analysis.category}
+              </Badge>
+            )}
+            <DraftDialog
+              articleIds={[article.id]}
+              topicHint={article.title}
+              triggerLabel="초안"
+              triggerSize="sm"
+              triggerVariant="outline"
+            />
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+// ── Article Row — 카테고리 섹션 / flat list 공용 ──
+
+function ArticleRow({ article }: { article: Article }) {
+  const isHigh = (article.analysis?.importance_score ?? 0) >= 8.0;
+  return (
+    <Card
+      size="sm"
+      className={
+        isHigh
+          ? "border-l-4 border-l-primary bg-primary/5 transition-colors"
+          : "transition-colors hover:bg-muted/40"
+      }
+    >
+      <CardContent>
+        <div className="flex items-start justify-between gap-4">
+          <Link
+            href={`/news/${article.id}`}
+            className="flex-1 min-w-0 block hover:text-primary"
+          >
+            <div className="flex items-center gap-1.5">
+              {isHigh && (
+                <AlertTriangle className="size-3.5 text-primary shrink-0" />
+              )}
+              <p className="font-medium leading-snug line-clamp-1">
+                {article.title}
+              </p>
+            </div>
+            <p className="mt-1 text-sm text-muted-foreground line-clamp-2">
+              {article.description}
+            </p>
+            <div className="mt-2 flex items-center gap-3 text-xs text-muted-foreground">
+              <span>{article.source_name}</span>
+              <span>{relativeTime(article.published_at)}</span>
+            </div>
+          </Link>
+          <div className="flex flex-col items-end gap-1.5 shrink-0">
+            {isHigh && (
+              <Badge className="text-[10px] bg-primary/10 text-primary border-primary/30">
+                중요
+              </Badge>
+            )}
+            {article.analysis?.category && (
+              <Badge variant="secondary" className="text-[10px]">
+                {CATEGORY_LABEL[article.analysis.category] || article.analysis.category}
+              </Badge>
+            )}
+            <DraftDialog
+              articleIds={[article.id]}
+              topicHint={article.title}
+              triggerLabel="초안"
+              triggerSize="sm"
+              triggerVariant="outline"
+            />
+          </div>
+        </div>
+      </CardContent>
+    </Card>
   );
 }
