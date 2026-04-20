@@ -1,9 +1,9 @@
 """자동 팩트 검증 — L2 Detection layer (docs/REFERENCES.md §4 참조)
 
-3개 검증기를 병렬 실행:
+3개 검증기:
   1. Entity KB — 공직자 직책 불일치 (role_mismatch)
   2. Number grounding — 숫자·금액·퍼센트·연도가 원문 기사에 실재하는지 (number_unsupported)
-  3. Entity grounding — 인명·지명이 원문 기사에 등장하는지 (entity_unsupported)
+  3. Entity grounding — KB 미등재 인물이 원문에도 없으면 (entity_unknown)
 
 한계 (정직한 인정):
   - 근사값·단위변환(1만 달러 vs $10,000)은 false positive 가능
@@ -29,8 +29,7 @@ IssueSeverity = Literal["high", "medium", "low"]
 IssueKind = Literal[
     "role_mismatch",       # Entity KB 직책 불일치 (high)
     "number_unsupported",  # 원문에 없는 수치 (medium)
-    "entity_unsupported",  # 원문에 없는 인명/지명 (low~medium)
-    "entity_unknown",      # KB 미등재 인물이 직책과 함께 등장 (low)
+    "entity_unknown",      # KB 미등재 인물이 원문에도 없는 경우 (low)
 ]
 
 
@@ -124,39 +123,38 @@ _NUMBER_PATTERN = re.compile(
     r"(?<![0-9a-zA-Z,\.])"                # 숫자 앞에 숫자/영문 없음
     r"(\d{1,3}(?:,\d{3})+|\d+(?:\.\d+)?)" # 본체 (콤마 포함 or 소수)
     r"\s*"
-    r"(만|천|억|조|%|퍼센트|원|달러|명|건|년|월|일|개|곳|%|kg|g|km|m)?"
+    r"(만|천|억|조|%|퍼센트|원|달러|명|건|년|월|일|개|곳|kg|g|km|m)?"
 )
 
 
-def _extract_numbers(text: str) -> list[str]:
+def _extract_numbers(text: str) -> list[tuple[str, str, str]]:
     """본문에서 의미있는 수치 표현 추출 — '1만', '60만 원', '2.5%', '2026년' 등."""
-    results = []
+    results: list[tuple[str, str, str]] = []
     for m in _NUMBER_PATTERN.finditer(text):
         number = m.group(1).replace(",", "")
         unit = m.group(2) or ""
-        # 너무 흔한 수치(예: 1, 2, 3 단일 자리) 는 noise 라 제외 — 2자리 이상만
         if len(number) < 2 and not unit:
             continue
         results.append((number, unit, m.group(0)))
     return results
 
 
-def _text_contains_number(source_text: str, number: str, unit: str) -> bool:
+def _text_contains_number(
+    source_text: str, source_text_nospace: str, number: str, unit: str
+) -> bool:
     """원문 전체 텍스트에 동일 수치가 있는지 — 단위와 함께 or 단독.
 
     완전 일치 + 단위 변형(1만 = 10000) 약간 허용.
     """
     if not source_text:
         return False
-    # 단순 완전 일치
-    if unit and f"{number}{unit}" in source_text.replace(" ", ""):
+    if unit and f"{number}{unit}" in source_text_nospace:
         return True
     if unit and f"{number} {unit}" in source_text:
         return True
     if number in source_text:
-        # 숫자만 일치해도 pass (약한 검증) — false positive 최소화
         return True
-    # '1만' ↔ '10000' 단위 변환 간이 허용
+    # '1만' ↔ '10000' 단위 변환 간이 허용 — false positive 최소화
     if unit == "만":
         try:
             expanded = str(int(number) * 10000)
@@ -168,15 +166,15 @@ def _text_contains_number(source_text: str, number: str, unit: str) -> bool:
 
 
 def _check_numbers(text: str, source_corpus: str) -> list[FactIssue]:
-    """생성문의 숫자가 원문 corpus 에 존재하지 않으면 flag."""
     issues: list[FactIssue] = []
     seen: set[str] = set()
+    corpus_nospace = source_corpus.replace(" ", "")
     for number, unit, raw in _extract_numbers(text):
         key = f"{number}{unit}"
         if key in seen:
             continue
         seen.add(key)
-        if not _text_contains_number(source_corpus, number, unit):
+        if not _text_contains_number(source_corpus, corpus_nospace, number, unit):
             issues.append(FactIssue(
                 severity="medium",
                 kind="number_unsupported",

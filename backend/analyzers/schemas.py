@@ -144,3 +144,10 @@ class ArticleDraftTransition(BaseModel):
     """상태 전이 (결재 요청·승인·반려·초안으로 복귀)"""
     to: DraftStatus
     note: str | None = None
+
+
+class FactIssueAcknowledge(BaseModel):
+    """개별 팩트 경고 확인 처리 (HITL)"""
+    acknowledged: bool = True
+    acknowledged_by: str | None = None
+    note: str | None = None

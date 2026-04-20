@@ -97,7 +97,6 @@ export function DraftDialog({
   const handleOpenChange = (next: boolean) => {
     setOpen(next);
     if (!next) {
-      // 닫힐 때 결과 초기화
       setDraft(null);
       setError(null);
       setStyle("straight");

@@ -4,11 +4,11 @@
 '예비 게시' 에서 저장된 기사를 편집국 워크플로에 올린다.
 """
 
+import logging
 from datetime import datetime, timezone
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -18,11 +18,13 @@ from backend.analyzers.schemas import (
     ArticleDraftTransition,
     ArticleDraftUpdate,
     DraftStatus,
+    FactIssueAcknowledge,
 )
 from backend.database import get_db
 from backend.database.models import Article, ArticleDraft
 from backend.models.schemas import APIResponse
 
+logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/article-drafts", tags=["article-drafts"])
 
 
@@ -71,14 +73,23 @@ async def _run_fact_check(
     origin_article_ids: list,
 ) -> list[dict]:
     """원본 기사를 조회해 자동 팩트 검증 실행, FactIssue dict 리스트 반환."""
-    source_articles: list = []
+    source_articles: list[dict] = []
     if origin_article_ids:
-        try:
-            ids = [UUID(str(x)) for x in origin_article_ids]
-            stmt = select(Article).where(Article.id.in_(ids))
-            source_articles = list((await db.execute(stmt)).scalars().all())
-        except Exception:
-            source_articles = []
+        ids: list[UUID] = []
+        for x in origin_article_ids:
+            try:
+                ids.append(UUID(str(x)))
+            except (ValueError, TypeError):
+                logger.warning("skip non-UUID origin_article_id=%r", x)
+        if ids:
+            stmt = select(
+                Article.title, Article.description, Article.content
+            ).where(Article.id.in_(ids))
+            rows = (await db.execute(stmt)).all()
+            source_articles = [
+                {"title": r[0] or "", "description": r[1] or "", "content": r[2] or ""}
+                for r in rows
+            ]
     issues = verify_article_draft(
         title=title,
         lead=lead,
@@ -166,31 +177,34 @@ async def update_draft(
 
     payload = req.model_dump(exclude_unset=True)
     for key, value in payload.items():
-        if value is not None and value != "":
-            setattr(item, key, value)
+        setattr(item, key, value)
 
-    # 본문이 바뀌었으면 자동 검증 재실행. 기존 ack 는 claim 이 동일하면 보존.
-    prior_ack: dict[str, dict] = {
-        i.get("claim", ""): i
-        for i in (item.fact_issues or [])
-        if i.get("acknowledged")
-    }
-    new_issues = await _run_fact_check(
-        db,
-        title=item.title,
-        lead=item.lead,
-        body=item.body,
-        background=item.background or "",
-        origin_article_ids=item.origin_article_ids or [],
+    # 텍스트 필드가 바뀌었을 때만 재검증. 기존 ack 는 claim 이 동일하면 보존.
+    text_fields_changed = bool(
+        {"title", "lead", "body", "background"} & payload.keys()
     )
-    for issue in new_issues:
-        prior = prior_ack.get(issue.get("claim", ""))
-        if prior:
-            issue["acknowledged"] = True
-            issue["acknowledged_by"] = prior.get("acknowledged_by")
-            issue["acknowledged_at"] = prior.get("acknowledged_at")
-            issue["acknowledged_note"] = prior.get("acknowledged_note")
-    item.fact_issues = new_issues
+    if text_fields_changed:
+        prior_ack: dict[str, dict] = {
+            i.get("claim", ""): i
+            for i in (item.fact_issues or [])
+            if i.get("acknowledged")
+        }
+        new_issues = await _run_fact_check(
+            db,
+            title=item.title,
+            lead=item.lead,
+            body=item.body,
+            background=item.background or "",
+            origin_article_ids=item.origin_article_ids or [],
+        )
+        for issue in new_issues:
+            prior = prior_ack.get(issue.get("claim", ""))
+            if prior:
+                issue["acknowledged"] = True
+                issue["acknowledged_by"] = prior.get("acknowledged_by")
+                issue["acknowledged_at"] = prior.get("acknowledged_at")
+                issue["acknowledged_note"] = prior.get("acknowledged_note")
+        item.fact_issues = new_issues
     await db.commit()
     await db.refresh(item)
     return APIResponse(data=_serialize(item))
@@ -244,12 +258,6 @@ async def transition_draft(
     await db.commit()
     await db.refresh(item)
     return APIResponse(data=_serialize(item))
-
-
-class FactIssueAcknowledge(BaseModel):
-    acknowledged: bool = True
-    acknowledged_by: str | None = None
-    note: str | None = None
 
 
 @router.post(

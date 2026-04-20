@@ -24,6 +24,9 @@ import {
   BookOpen,
   Clock,
   FileText,
+  ShieldAlert,
+  ShieldCheck,
+  Bot,
 } from "lucide-react";
 
 import {
@@ -37,9 +40,10 @@ import type {
   ArticleDraftItem,
   ArticleDraftStatus,
   FactIssue,
+  FactIssueKind,
+  FactIssueSeverity,
 } from "@/lib/types";
 import { CopyButton } from "@/components/copy-button";
-import { ShieldAlert, ShieldCheck, Bot } from "lucide-react";
 
 const categoryLabel: Record<string, string> = {
   politics: "정치", economy: "경제", society: "사회",
@@ -54,6 +58,26 @@ const STATUS_META: Record<
   in_review: { label: "결재 대기", className: "bg-amber-100 text-amber-800" },
   approved: { label: "게시 완료", className: "bg-emerald-100 text-emerald-800" },
   rejected: { label: "반려", className: "bg-destructive/10 text-destructive" },
+};
+
+const SEVERITY_ORDER: Record<FactIssueSeverity, number> = { high: 0, medium: 1, low: 2 };
+
+const KIND_LABEL: Record<FactIssueKind, string> = {
+  role_mismatch: "직책 오류",
+  number_unsupported: "수치 미확인",
+  entity_unknown: "미등재 인물",
+};
+
+const SEV_COLOR: Record<FactIssueSeverity, string> = {
+  high: "border-destructive/50 bg-destructive/5",
+  medium: "border-amber-300 bg-amber-50/50",
+  low: "border-muted bg-muted/20",
+};
+
+const SEV_BADGE_COLOR: Record<FactIssueSeverity, string> = {
+  high: "bg-destructive/10 text-destructive",
+  medium: "bg-amber-100 text-amber-800",
+  low: "bg-muted text-muted-foreground",
 };
 
 export default function NewsroomDetailPage({
@@ -314,7 +338,6 @@ export default function NewsroomDetailPage({
         )}
       </div>
 
-      {/* 자동 팩트 검증 — L2 + HITL ack */}
       {item.fact_issues.length > 0 && (
         <FactCheckCard
           issues={item.fact_issues}
@@ -537,26 +560,9 @@ function FactCheckCard({
   totalAck: number;
 }) {
   const total = issues.length;
-  const severityOrder: Record<string, number> = { high: 0, medium: 1, low: 2 };
   const sorted = [...issues].sort(
-    (a, b) => (severityOrder[a.severity] ?? 3) - (severityOrder[b.severity] ?? 3)
+    (a, b) => SEVERITY_ORDER[a.severity] - SEVERITY_ORDER[b.severity]
   );
-  const kindLabel: Record<FactIssue["kind"], string> = {
-    role_mismatch: "직책 오류",
-    number_unsupported: "수치 미확인",
-    entity_unsupported: "엔티티 미확인",
-    entity_unknown: "미등재 인물",
-  };
-  const sevColor: Record<FactIssue["severity"], string> = {
-    high: "border-destructive/50 bg-destructive/5",
-    medium: "border-amber-300 bg-amber-50/50",
-    low: "border-muted bg-muted/20",
-  };
-  const sevBadgeColor: Record<FactIssue["severity"], string> = {
-    high: "bg-destructive/10 text-destructive",
-    medium: "bg-amber-100 text-amber-800",
-    low: "bg-muted text-muted-foreground",
-  };
 
   const allAck = totalAck === total && total > 0;
   const progressPct = total > 0 ? Math.round((totalAck / total) * 100) : 0;
@@ -595,17 +601,17 @@ function FactCheckCard({
           {sorted.map((issue) => (
             <li
               key={issue.id}
-              className={`rounded border p-3 ${sevColor[issue.severity]} ${
+              className={`rounded border p-3 ${SEV_COLOR[issue.severity]} ${
                 issue.acknowledged ? "opacity-60" : ""
               }`}
             >
               <div className="flex items-start gap-2">
-                <Badge className={`text-[10px] ${sevBadgeColor[issue.severity]}`}>
+                <Badge className={`text-[10px] ${SEV_BADGE_COLOR[issue.severity]}`}>
                   {issue.severity.toUpperCase()}
                 </Badge>
                 <div className="flex-1 min-w-0 space-y-1">
                   <div className="text-xs text-muted-foreground">
-                    {kindLabel[issue.kind]}
+                    {KIND_LABEL[issue.kind]}
                   </div>
                   <div className="font-medium text-sm">
                     <span className="bg-yellow-100 px-1 rounded">

@@ -47,8 +47,9 @@ async def create_draft(
     except anthropic.BadRequestError as e:
         logger.error(f"Anthropic API 400: {e}")
         # 크레딧 부족 · 요청 포맷 오류 — 사용자에게 전달 가능한 메시지
-        msg = getattr(getattr(e, "body", None), "get", lambda *_: None)("error", {})
-        detail = msg.get("message") if isinstance(msg, dict) else str(e)
+        body = getattr(e, "body", None)
+        err = body.get("error") if isinstance(body, dict) else None
+        detail = err.get("message") if isinstance(err, dict) else str(e)
         raise HTTPException(status_code=503, detail=f"LLM 서비스 오류: {detail}")
     except anthropic.APIStatusError as e:
         logger.error(f"Anthropic API {e.status_code}: {e}")

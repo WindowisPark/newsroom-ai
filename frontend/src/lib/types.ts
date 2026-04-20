@@ -228,7 +228,6 @@ export type FactIssueSeverity = "high" | "medium" | "low";
 export type FactIssueKind =
   | "role_mismatch"
   | "number_unsupported"
-  | "entity_unsupported"
   | "entity_unknown";
 
 export interface FactIssue {
