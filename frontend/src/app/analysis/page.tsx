@@ -238,19 +238,35 @@ function PerspectiveTab() {
   );
 }
 
+const TONE_LABEL: Record<string, string> = {
+  supportive: "우호적",
+  critical: "비판적",
+  neutral: "중립적",
+  cautious: "신중",
+  // 혹시 모를 변이 — 과거 prompt 에서 허용된 값
+  positive: "긍정",
+  negative: "부정",
+};
+
+const TONE_COLOR: Record<string, string> = {
+  supportive: "text-blue-600",
+  critical: "text-amber-600",
+  neutral: "text-zinc-500",
+  cautious: "text-violet-600",
+  positive: "text-emerald-600",
+  negative: "text-red-600",
+};
+
 function PerspectiveCard({ title, side }: { title: string; side: PerspectiveData["domestic"] }) {
-  const toneColor: Record<string, string> = {
-    positive: "text-emerald-600", negative: "text-red-600",
-    neutral: "text-zinc-500", critical: "text-amber-600",
-    supportive: "text-blue-600",
-  };
+  const label = TONE_LABEL[side.tone] ?? side.tone;
+  const colorClass = TONE_COLOR[side.tone] ?? "text-muted-foreground";
 
   return (
     <Card>
       <CardHeader>
         <CardTitle>{title}</CardTitle>
-        <CardDescription className={toneColor[side.tone] || "text-muted-foreground"}>
-          논조: {side.tone}
+        <CardDescription className={colorClass}>
+          논조: {label}
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-3">
