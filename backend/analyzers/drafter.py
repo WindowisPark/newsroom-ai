@@ -137,7 +137,7 @@ style: {style}{topic_line}
         system_prompt=DRAFT_SYSTEM,
         user_message=user_message,
         model=MODEL_FOR["draft"],
-        max_tokens=6144,
+        max_tokens=8192,
         temperature=0.4,
     )
 

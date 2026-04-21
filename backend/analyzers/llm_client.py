@@ -96,12 +96,20 @@ async def call_llm(
     )
 
     raw_text = response.content[0].text
+    stop_reason = getattr(response, "stop_reason", None)
 
     # JSON 추출 (코드 블록 안에 있을 수 있음)
     content = _parse_json(raw_text)
 
     if content.get("parse_error"):
-        logger.error(f"LLM JSON 파싱 실패 (model={model}): {raw_text[:200]}")
+        logger.error(
+            f"LLM JSON 파싱 실패 (model={model}, stop_reason={stop_reason}, "
+            f"len={len(raw_text)}): head={raw_text[:200]!r} tail={raw_text[-200:]!r}"
+        )
+        if stop_reason == "max_tokens":
+            raise ValueError(
+                f"LLM 응답이 max_tokens({max_tokens})에서 잘렸습니다. max_tokens 상향 필요."
+            )
         raise ValueError(f"LLM 응답을 JSON으로 파싱할 수 없습니다: {raw_text[:100]}")
 
     return {
