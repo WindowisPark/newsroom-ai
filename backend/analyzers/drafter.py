@@ -78,6 +78,32 @@ def _source_tier(source_name: str) -> str:
     return "other"
 
 
+def _check_source_diversity(articles: list[Article]) -> None:
+    """입력 기사 구성이 wire-redistribution 위험인지 검사.
+
+    agency(연합뉴스·Reuters·AP 등) 비율이 너무 높고 own(서울신문) 기사가 없으면
+    초안이 통신사 문장 재배열 수준이 될 가능성이 높다. 한국 편집 관행상 자사
+    바이라인으로 낼 수 없는 수준의 입력이므로 사전 차단.
+    """
+    if len(articles) < 2:
+        return  # 1건뿐이면 어차피 초안이 아니라 요약 수준
+
+    tier_counts: Counter = Counter()
+    for a in articles:
+        tier_counts[_source_tier(a.source_name)] += 1
+
+    total = sum(tier_counts.values())
+    agency_ratio = tier_counts["agency"] / total
+    own_count = tier_counts["own"]
+
+    if agency_ratio >= 0.7 and own_count == 0:
+        raise ValueError(
+            f"소스 다양성 부족 — 통신사/외신 비중 {int(agency_ratio * 100)}%, "
+            f"자사 기사 0건. 자사 취재 없이 통신사만 재배열하는 wire-redistribution "
+            f"위험이 큽니다. 다른 매체의 관련 기사를 추가로 선택해주세요."
+        )
+
+
 async def generate_draft(
     db: AsyncSession,
     article_ids: list[UUID],
@@ -99,6 +125,9 @@ async def generate_draft(
     missing = set(article_ids) - {a.id for a in articles}
     if missing:
         raise LookupError(f"articles not found: {sorted(missing)}")
+
+    # 입력 소스 다양성 사전 검사 — wire-redistribution 차단
+    _check_source_diversity(articles)
 
     # ── RAG: 자사·통신사(references) + 경쟁 일간지(background) 분리 검색 ──
     query_keywords = _collect_query_keywords(articles, topic_hint)

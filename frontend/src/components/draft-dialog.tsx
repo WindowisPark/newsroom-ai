@@ -581,6 +581,7 @@ const CRITERIA_LABELS: Record<keyof QualityReview["criteria"], string> = {
   tone_consistency: "톤 일관성",
   citation_compliance: "인용 정책 준수",
   factual_specificity: "사실 구체성",
+  source_dependency: "자사 독자성",
 };
 
 const RECO_STYLE: Record<

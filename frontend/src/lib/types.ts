@@ -227,6 +227,7 @@ export interface QualityReview {
     tone_consistency: QualityCriterion;
     citation_compliance: QualityCriterion;
     factual_specificity: QualityCriterion;
+    source_dependency: QualityCriterion; // 자사 저널리즘 독자성 (통신사 의존도)
   };
   critical_issues: string[];
   suggested_revisions: string[];
