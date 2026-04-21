@@ -28,6 +28,8 @@ _CATEGORY_ALIASES = {
     "business": "economy",
     "finance": "economy",
     "social": "society",
+    "health": "society",  # 의료·보건 기사 — 한국 편집 관행상 society 로 분류
+    "medical": "society",
     "world news": "world",
     "international": "world",
     "cultural": "culture",

@@ -28,7 +28,10 @@ async def list_news(
     category: str | None = None,
     sentiment: str | None = None,
     source_type: str | None = None,
-    sort_by: str = Query("importance", pattern="^(importance|published_at|created_at)$"),
+    sort_by: str = Query(
+        "importance",
+        pattern="^(importance|published_at|created_at|collected_at)$",
+    ),
     q: str | None = None,
     db: AsyncSession = Depends(get_db),
 ):
@@ -56,6 +59,8 @@ async def list_news(
         stmt = stmt.order_by(ArticleAnalysis.importance_score.desc().nullslast())
     elif sort_by == "published_at":
         stmt = stmt.order_by(Article.published_at.desc().nullslast())
+    elif sort_by == "collected_at":
+        stmt = stmt.order_by(Article.collected_at.desc())
     else:
         stmt = stmt.order_by(Article.created_at.desc())
 
