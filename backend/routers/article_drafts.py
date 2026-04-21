@@ -71,6 +71,7 @@ def _serialize(d: ArticleDraft) -> dict:
         "status": d.status,
         "review_note": d.review_note,
         "fact_issues": d.fact_issues or [],
+        "quality_review": d.quality_review,
         "model_used": d.model_used,
         "created_at": d.created_at,
         "updated_at": d.updated_at,
@@ -158,6 +159,7 @@ async def create_draft(
         origin_article_ids=req.origin_article_ids,
         status="draft",
         fact_issues=fact_issues,
+        quality_review=req.quality_review,
         model_used=req.model_used,
     )
     db.add(item)

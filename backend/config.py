@@ -6,6 +6,9 @@ class Settings(BaseSettings):
     # Anthropic
     anthropic_api_key: str = ""
 
+    # Google Gemini — 초안 품질 판독(이종 judge)
+    gemini_api_key: str = ""
+
     # NewsAPI
     newsapi_key: str = ""
 

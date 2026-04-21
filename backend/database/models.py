@@ -144,6 +144,9 @@ class ArticleDraft(Base):
     # 자동 팩트 검증 결과 — 편집자가 각 issue 를 개별 ack 처리
     fact_issues: Mapped[list[dict]] = mapped_column(JSONB, default=list)
 
+    # 이종 judge(Gemini) 품질 판독 — 6축 점수 + 추천(publish/revise/reject) + 수정 제안
+    quality_review: Mapped[dict | None] = mapped_column(JSONB)
+
     model_used: Mapped[str | None] = mapped_column(String(50))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(

@@ -162,12 +162,35 @@ style: {style}{topic_line}
     parsed.background_sources = [_ref_to_source(r) for r in background]
     parsed.style_anchor = _ref_to_source(style_anchor) if style_anchor else None
 
+    draft_dict = parsed.model_dump()
+
+    # 이종 judge(Gemini) 품질 판독 — 실패해도 초안 생성은 보존
+    quality_review: dict | None = None
+    review_model: str | None = None
+    review_prompt_tokens = 0
+    review_completion_tokens = 0
+    try:
+        from backend.analyzers.reviewer import review_draft
+
+        review_result = await review_draft(draft_dict)
+        quality_review = review_result["review"]
+        review_model = review_result["model_used"]
+        review_prompt_tokens = review_result["prompt_tokens"]
+        review_completion_tokens = review_result["completion_tokens"]
+    except Exception as e:
+        import logging as _logging
+        _logging.getLogger(__name__).warning(f"Draft 판독 실패 (초안은 유지): {e}")
+
     return {
-        "draft": parsed.model_dump(),
+        "draft": draft_dict,
         "generated_at": datetime.now(timezone.utc),
         "model_used": llm_result["model_used"],
         "prompt_tokens": llm_result["prompt_tokens"],
         "completion_tokens": llm_result["completion_tokens"],
+        "quality_review": quality_review,
+        "review_model": review_model,
+        "review_prompt_tokens": review_prompt_tokens,
+        "review_completion_tokens": review_completion_tokens,
     }
 
 

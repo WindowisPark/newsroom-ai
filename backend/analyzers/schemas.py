@@ -129,6 +129,8 @@ class ArticleDraftCreate(BaseModel):
     style_anchor: SourceRef | None = None
     origin_article_ids: list[str] = Field(default_factory=list)
     model_used: str | None = None
+    # Reviewer(Gemini) 판독 리포트 스냅샷 — 생성 시 함께 저장
+    quality_review: dict | None = None
 
 
 class ArticleDraftUpdate(BaseModel):

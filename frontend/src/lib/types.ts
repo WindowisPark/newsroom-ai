@@ -203,6 +203,33 @@ export interface DraftData {
   prompt_tokens: number;
   completion_tokens: number;
   generated_at: string;
+  // 이종 judge(Gemini) 품질 판독 — 실패 시 null
+  quality_review: QualityReview | null;
+  review_model?: string | null;
+  review_prompt_tokens?: number;
+  review_completion_tokens?: number;
+}
+
+export type QualityRecommendation = "publish" | "revise" | "reject";
+
+export interface QualityCriterion {
+  score: number; // 0~10
+  note: string;
+}
+
+export interface QualityReview {
+  overall_score: number; // 0~10
+  recommendation: QualityRecommendation;
+  criteria: {
+    lead_strength: QualityCriterion;
+    six_w_coverage: QualityCriterion;
+    inverted_pyramid: QualityCriterion;
+    tone_consistency: QualityCriterion;
+    citation_compliance: QualityCriterion;
+    factual_specificity: QualityCriterion;
+  };
+  critical_issues: string[];
+  suggested_revisions: string[];
 }
 
 // ── Watchlist ──
@@ -272,6 +299,7 @@ export interface ArticleDraftItem {
   status: ArticleDraftStatus;
   review_note: string | null;
   fact_issues: FactIssue[];
+  quality_review: QualityReview | null;
   model_used: string | null;
   created_at: string;
   updated_at: string;

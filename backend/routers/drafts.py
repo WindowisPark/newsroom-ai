@@ -67,4 +67,8 @@ async def create_draft(
         "model_used": result["model_used"],
         "prompt_tokens": result["prompt_tokens"],
         "completion_tokens": result["completion_tokens"],
+        "quality_review": result.get("quality_review"),
+        "review_model": result.get("review_model"),
+        "review_prompt_tokens": result.get("review_prompt_tokens"),
+        "review_completion_tokens": result.get("review_completion_tokens"),
     })
