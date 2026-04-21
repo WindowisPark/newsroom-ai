@@ -1,5 +1,6 @@
 """관점 비교 분석기 - Sonnet 4.6 (국내 vs 외신)"""
 
+import logging
 from datetime import date, datetime, timezone
 
 from sqlalchemy import select, func, or_
@@ -8,6 +9,48 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from backend.analyzers.llm_client import MODEL_FOR, call_llm
 from backend.database.models import Article, ArticleAnalysis, PerspectiveReport
 from backend.prompts import PERSPECTIVE_SYSTEM
+
+logger = logging.getLogger(__name__)
+
+
+# 외신 검색 키워드 생성용 — Haiku 에 직접 system prompt 로 주입.
+# LLM_client.call_llm 이 JSON 응답을 요구하므로 구조화 JSON 로 받음.
+_TRANSLATE_SYSTEM = """\
+You convert a Korean news topic into English search keywords for foreign news.
+
+Rules:
+- Produce 3~5 English keywords/phrases (people, places, organizations, events).
+- Always use the standard English spelling used by Reuters/BBC/AP.
+  Korean president names, country names, currencies etc. should map to their
+  English equivalents (e.g. "호르무즈 해협" → "Strait of Hormuz", "윤석열" → "Yoon Suk-yeol").
+- If the Korean topic contains a proper noun with no common English form, transliterate.
+- Return STRICT JSON only:
+{"english_terms": ["term1", "term2", ...]}
+"""
+
+
+async def _expand_foreign_search_terms(topic: str) -> list[str]:
+    """Korean topic → 외신 검색용 English 키워드 리스트.
+
+    Haiku 1회 호출. 실패 시 한국어 원문을 그대로 폴백(매칭 0건일 가능성 높음).
+    """
+    try:
+        result = await call_llm(
+            system_prompt=_TRANSLATE_SYSTEM,
+            user_message=f"Korean topic: {topic}\n\nReturn English search keywords as JSON.",
+            model=MODEL_FOR["classify"],  # Haiku — 번역 수준에 충분
+            max_tokens=256,
+            temperature=0.1,
+        )
+        terms = result["content"].get("english_terms", [])
+        terms = [t.strip() for t in terms if isinstance(t, str) and t.strip()]
+        if not terms:
+            return [topic]
+        logger.info(f"Perspective topic '{topic}' → foreign terms: {terms}")
+        return terms
+    except Exception as e:
+        logger.warning(f"외신 키워드 번역 실패, 한국어 폴백 ({e})")
+        return [topic]
 
 
 async def compare_perspectives(
@@ -19,14 +62,16 @@ async def compare_perspectives(
     if target_date is None:
         target_date = date.today()
 
-    # 국내 기사 조회
+    # 국내는 한국어 topic 그대로 split
+    domestic_terms = [t for t in topic.split() if t]
     domestic_articles = await _fetch_articles_by_topic(
-        db, topic, target_date, source_type="domestic"
+        db, domestic_terms, target_date, source_type="domestic"
     )
 
-    # 외신 기사 조회
+    # 외신은 한국어 → 영어 번역 키워드로 검색 (언어 장벽 해결)
+    foreign_terms = await _expand_foreign_search_terms(topic)
     foreign_articles = await _fetch_articles_by_topic(
-        db, topic, target_date, source_type="foreign"
+        db, foreign_terms, target_date, source_type="foreign"
     )
 
     if not domestic_articles and not foreign_articles:
@@ -76,13 +121,19 @@ async def compare_perspectives(
 
 async def _fetch_articles_by_topic(
     db: AsyncSession,
-    topic: str,
+    search_terms: list[str],
     target_date: date,
     source_type: str,
 ) -> list[Article]:
-    """주제 키워드와 소스 타입으로 기사 조회"""
-    keywords = topic.split()
-    conditions = [Article.title.ilike(f"%{kw}%") for kw in keywords]
+    """주어진 검색어 리스트와 소스 타입으로 기사 조회.
+
+    search_terms 는 domestic 은 한국어, foreign 은 영어로 미리 분기된 상태.
+    """
+    if not search_terms:
+        return []
+    conditions = [Article.title.ilike(f"%{t}%") for t in search_terms if t]
+    if not conditions:
+        return []
 
     stmt = (
         select(Article)
