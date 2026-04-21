@@ -145,9 +145,11 @@ def _parse_json(text: str) -> dict:
     if start != -1 and end > start:
         candidates.append(stripped[start:end])
 
+    # strict=False: Sonnet 이 body Markdown 에 이스케이프 안 된 raw 개행을 섞는
+    # 경우가 있어 허용. JSON 표준 위반이지만 모델 출력 현실 수용.
     for c in candidates:
         try:
-            return json.loads(c)
+            return json.loads(c, strict=False)
         except json.JSONDecodeError:
             continue
 
