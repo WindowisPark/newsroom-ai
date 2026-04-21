@@ -107,81 +107,132 @@ async def get_trends(
     now = datetime.now(timezone.utc)
     hours_map = {"6h": 6, "12h": 12, "24h": 24, "7d": 168}
     since = now - timedelta(hours=hours_map[period])
+    bucket = _bucket_for_period(period)  # 6h/12h/24h → hour, 7d → day
 
     if type == "keyword":
-        data_points = await _keyword_trends(db, since)
+        data_points = await _keyword_trends(db, since, bucket)
     elif type == "category":
-        data_points = await _category_trends(db, since)
+        data_points = await _category_trends(db, since, bucket)
     else:
-        data_points = await _sentiment_trends(db, since)
+        data_points = await _sentiment_trends(db, since, bucket)
 
     payload = TrendOut(period=period, type=type, data_points=data_points)
     _trends_cache[cache_key] = (time.monotonic(), payload)
     return APIResponse(data=payload)
 
 
-async def _keyword_trends(db: AsyncSession, since: datetime) -> list[TrendSeries]:
-    """키워드 빈도 트렌드"""
+def _bucket_expr(bucket: str, dialect_name: str):
+    """`Article.collected_at` 을 시간·일 단위로 잘라내는 dialect-aware 표현식.
+
+    Postgres 는 date_trunc, SQLite 는 strftime 으로 분기. 반환 표현식을
+    SELECT/GROUP BY 에 공통으로 사용.
+    """
+    if dialect_name == "postgresql":
+        unit = "hour" if bucket == "hour" else "day"
+        return func.date_trunc(unit, Article.collected_at)
+    # SQLite 테스트 호환 — strftime 문자열 반환 (ISO-like 정렬 가능)
+    fmt = "%Y-%m-%d %H:00" if bucket == "hour" else "%Y-%m-%d"
+    return func.strftime(fmt, Article.collected_at)
+
+
+def _bucket_for_period(period: str) -> str:
+    """6h/12h/24h → 'hour', 7d → 'day'."""
+    return "day" if period == "7d" else "hour"
+
+
+def _as_datetime(value) -> datetime:
+    """bucket 컬럼 결과(datetime 또는 strftime 문자열)를 datetime 으로 정규화."""
+    if isinstance(value, datetime):
+        return value if value.tzinfo else value.replace(tzinfo=timezone.utc)
+    if isinstance(value, str):
+        # strftime 결과: "YYYY-MM-DD HH:00" 또는 "YYYY-MM-DD"
+        try:
+            if len(value) > 10:
+                return datetime.strptime(value, "%Y-%m-%d %H:%M").replace(tzinfo=timezone.utc)
+            return datetime.strptime(value, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+        except ValueError:
+            return datetime.now(timezone.utc)
+    return datetime.now(timezone.utc)
+
+
+async def _keyword_trends(
+    db: AsyncSession, since: datetime, bucket: str
+) -> list[TrendSeries]:
+    """키워드 × 시간버킷 빈도. 상위 10 키워드만 반환."""
+    dialect_name = db.bind.dialect.name if db.bind else "postgresql"
+    bucket_col = _bucket_expr(bucket, dialect_name).label("bucket")
+
     stmt = (
-        select(ArticleAnalysis.keywords, func.count().label("cnt"))
-        .join(Article, Article.id == ArticleAnalysis.article_id)
+        select(bucket_col, ArticleAnalysis.keywords)
+        .join(ArticleAnalysis, ArticleAnalysis.article_id == Article.id)
         .where(Article.collected_at >= since)
-        .group_by(ArticleAnalysis.keywords)
     )
-    result = await db.execute(stmt)
-    # 키워드별 집계
-    keyword_counts: dict[str, int] = {}
-    for row in result.all():
-        keywords = row[0] if isinstance(row[0], list) else []
-        count = row[1]
+    rows = (await db.execute(stmt)).all()
+
+    # (키워드, 버킷) 별 카운트 + 키워드 전체 합
+    per_bucket: dict[str, dict[datetime, int]] = {}
+    totals: dict[str, int] = {}
+    for bucket_val, keywords in rows:
+        if not isinstance(keywords, list):
+            continue
+        bucket_dt = _as_datetime(bucket_val)
         for kw in keywords:
-            keyword_counts[kw] = keyword_counts.get(kw, 0) + count
+            per_bucket.setdefault(kw, {})
+            per_bucket[kw][bucket_dt] = per_bucket[kw].get(bucket_dt, 0) + 1
+            totals[kw] = totals.get(kw, 0) + 1
 
-    # 상위 10개
-    top = sorted(keyword_counts.items(), key=lambda x: x[1], reverse=True)[:10]
-    return [
-        TrendSeries(
-            label=kw,
-            values=[TrendDataPoint(time=datetime.now(timezone.utc), count=cnt)],
+    top_keywords = [kw for kw, _ in sorted(totals.items(), key=lambda x: x[1], reverse=True)[:10]]
+
+    series: list[TrendSeries] = []
+    for kw in top_keywords:
+        points = sorted(per_bucket[kw].items())
+        series.append(
+            TrendSeries(
+                label=kw,
+                values=[TrendDataPoint(time=t, count=c) for t, c in points],
+            )
         )
-        for kw, cnt in top
-    ]
+    return series
 
 
-async def _category_trends(db: AsyncSession, since: datetime) -> list[TrendSeries]:
-    """카테고리별 기사 수 트렌드"""
+async def _group_by_bucket(
+    db: AsyncSession, since: datetime, bucket: str, label_col
+) -> list[TrendSeries]:
+    """category/sentiment 공통 — (레이블, 버킷) GROUP BY → 레이블별 시리즈."""
+    dialect_name = db.bind.dialect.name if db.bind else "postgresql"
+    bucket_col = _bucket_expr(bucket, dialect_name).label("bucket")
+
     stmt = (
-        select(ArticleAnalysis.category, func.count().label("cnt"))
-        .join(Article, Article.id == ArticleAnalysis.article_id)
+        select(label_col, bucket_col, func.count().label("cnt"))
+        .join(ArticleAnalysis, ArticleAnalysis.article_id == Article.id)
         .where(Article.collected_at >= since)
-        .group_by(ArticleAnalysis.category)
+        .group_by(label_col, bucket_col)
     )
-    result = await db.execute(stmt)
+    rows = (await db.execute(stmt)).all()
+
+    per_label: dict[str, list[tuple[datetime, int]]] = {}
+    for label, bucket_val, cnt in rows:
+        if label is None:
+            continue
+        per_label.setdefault(label, []).append((_as_datetime(bucket_val), int(cnt)))
+
     return [
         TrendSeries(
-            label=row[0],
-            values=[TrendDataPoint(time=datetime.now(timezone.utc), count=row[1])],
+            label=label,
+            values=[TrendDataPoint(time=t, count=c) for t, c in sorted(points)],
         )
-        for row in result.all()
+        for label, points in per_label.items()
     ]
 
 
-async def _sentiment_trends(db: AsyncSession, since: datetime) -> list[TrendSeries]:
-    """감성별 기사 수 트렌드"""
-    stmt = (
-        select(ArticleAnalysis.sentiment, func.count().label("cnt"))
-        .join(Article, Article.id == ArticleAnalysis.article_id)
-        .where(Article.collected_at >= since)
-        .group_by(ArticleAnalysis.sentiment)
-    )
-    result = await db.execute(stmt)
-    return [
-        TrendSeries(
-            label=row[0],
-            values=[TrendDataPoint(time=datetime.now(timezone.utc), count=row[1])],
-        )
-        for row in result.all()
-    ]
+async def _category_trends(db: AsyncSession, since: datetime, bucket: str) -> list[TrendSeries]:
+    """카테고리 × 시간버킷 기사 수."""
+    return await _group_by_bucket(db, since, bucket, ArticleAnalysis.category)
+
+
+async def _sentiment_trends(db: AsyncSession, since: datetime, bucket: str) -> list[TrendSeries]:
+    """감성 × 시간버킷 기사 수."""
+    return await _group_by_bucket(db, since, bucket, ArticleAnalysis.sentiment)
 
 
 def _parse_date(date_str: str | None) -> date:
