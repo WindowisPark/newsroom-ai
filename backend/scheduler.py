@@ -102,9 +102,11 @@ async def collection_pipeline():
             # 워치리스트 매칭: 활성 키워드가 이번 배치 분석 결과에 잡히면 SSE 브로드캐스트
             await _match_watchlist(db, analyses)
 
-        # 3. 자동 보고: 충분한 기사가 분석되면 브리핑 + 의제 자동 생성
+        # 3. 자동 보고: 브리핑 스케줄(briefing_schedule)이 설정돼 있으면
+        #    파이프라인은 수집·분류에만 집중하고, 보고 생성은 cron 잡이 담당한다.
+        #    스케줄이 비어 있으면 기존 동작(충분한 기사 누적 시 하루 1회 생성)으로 폴백.
         settings = get_settings()
-        if settings.auto_report_enabled:
+        if settings.auto_report_enabled and not settings.briefing_schedule_list:
             await _auto_generate_reports(db)
 
 
@@ -191,6 +193,52 @@ async def _auto_generate_reports(db: AsyncSession):
             logger.error(f"Auto agenda generation failed: {e}")
 
 
+async def scheduled_reports_job():
+    """cron 스케줄러가 호출하는 브리핑/의제 생성 잡.
+
+    수집 파이프라인과 독립적으로 돌아 정해진 시각(예: 09:00, 18:00)에 매번 새
+    브리핑·의제를 생성한다. min_articles 체크는 유지하되 "이미 오늘 리포트가
+    있으면 스킵" 가드는 제거해 다회성 브리핑을 허용한다.
+    """
+    settings = get_settings()
+    if not settings.auto_report_enabled:
+        return
+
+    async with async_session() as db:
+        today = date.today()
+        count_stmt = (
+            select(func.count())
+            .select_from(ArticleAnalysis)
+            .join(Article)
+            .where(func.date(Article.collected_at) == today)
+        )
+        analyzed_count = (await db.execute(count_stmt)).scalar() or 0
+        if analyzed_count < settings.auto_report_min_articles:
+            logger.info(
+                f"Scheduled report skipped — analyzed {analyzed_count} < "
+                f"min {settings.auto_report_min_articles}"
+            )
+            return
+
+        try:
+            logger.info("Scheduled: generating briefing report...")
+            await generate_briefing(db, today)
+            broadcast_event(
+                "report_generated", {"type": "briefing", "date": today.isoformat()}
+            )
+        except Exception as e:
+            logger.error(f"Scheduled briefing generation failed: {e}")
+
+        try:
+            logger.info("Scheduled: generating agenda analysis...")
+            await analyze_agenda(db, today)
+            broadcast_event(
+                "report_generated", {"type": "agenda", "date": today.isoformat()}
+            )
+        except Exception as e:
+            logger.error(f"Scheduled agenda generation failed: {e}")
+
+
 def start_scheduler(interval_minutes: int = 15):
     """스케줄러 시작"""
     scheduler.add_job(
@@ -200,8 +248,23 @@ def start_scheduler(interval_minutes: int = 15):
         id="collection_pipeline",
         replace_existing=True,
     )
+
+    # briefing_schedule 에 지정된 시각마다 cron 잡 등록
+    settings = get_settings()
+    if settings.auto_report_enabled:
+        for i, (hour, minute) in enumerate(settings.briefing_schedule_list):
+            scheduler.add_job(
+                scheduled_reports_job,
+                "cron",
+                hour=hour,
+                minute=minute,
+                id=f"scheduled_reports_{i}",
+                replace_existing=True,
+            )
+            logger.info(f"Scheduled briefing/agenda job at {hour:02d}:{minute:02d}")
+
     scheduler.start()
-    logger.info(f"Scheduler started with {interval_minutes}min interval")
+    logger.info(f"Scheduler started with {interval_minutes}min collection interval")
 
 
 def stop_scheduler():

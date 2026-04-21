@@ -1,7 +1,7 @@
 import uuid
 from datetime import date, datetime
 
-from sqlalchemy import Boolean, Date, DateTime, Float, ForeignKey, Integer, String, Text, func
+from sqlalchemy import Boolean, Date, DateTime, Float, ForeignKey, Index, Integer, String, Text, func
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -28,6 +28,13 @@ class Article(Base):
 
 class ArticleAnalysis(Base):
     __tablename__ = "article_analyses"
+    # keywords JSONB 컬럼 GIN 인덱스 — drafter/agenda 가 JSONB has_any 로
+    # 수만 건 기사 중 후보를 수십 건으로 축소할 때 이 인덱스가 사용된다.
+    # postgresql_using='gin' 은 postgres 전용이며, SQLite 테스트 환경에서는
+    # 일반 인덱스로 fallback 된다 (create_all 실패 없음).
+    __table_args__ = (
+        Index("ix_article_analyses_keywords_gin", "keywords", postgresql_using="gin"),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     article_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("articles.id", ondelete="CASCADE"), unique=True, index=True)
@@ -38,6 +45,9 @@ class ArticleAnalysis(Base):
     importance_score: Mapped[float] = mapped_column(Float, default=5.0)
     analyzed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     model_used: Mapped[str] = mapped_column(String(50))
+    # LLM 호출 비용 추적 — 분류기 사이클마다 Haiku 호출 누계를 집계 가능
+    prompt_tokens: Mapped[int | None] = mapped_column(Integer)
+    completion_tokens: Mapped[int | None] = mapped_column(Integer)
 
     article: Mapped["Article"] = relationship(back_populates="analysis")
 

@@ -11,7 +11,9 @@ from collections import Counter
 from datetime import datetime, timedelta, timezone
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import String, or_, select
+from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.dialects.postgresql import array as pg_array
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.analyzers.agenda import _title_contains
@@ -44,6 +46,17 @@ _TOP_REFERENCES = 3
 _TOP_BACKGROUND = 3
 _SNIPPET_CHARS_DESC = 200
 _SNIPPET_CHARS_LEAD = 300
+# Python rerank 전 SQL 레벨에서 축소할 후보 상한 — 수만 건 기사 중
+# 티어·키워드·recency 필터로 이 수 이하로 줄인 뒤 Python 재랭킹.
+_RETRIEVAL_CANDIDATE_LIMIT = 200
+
+# _source_tier 와 동일한 티어 → 매체명 리스트 매핑.
+# SQL 레벨 source_name 필터에 사용.
+_TIER_TO_SOURCE_NAMES: dict[str, list[str]] = {
+    "own": OWN_SOURCE_NAMES,
+    "agency": AGENCY_SOURCE_NAMES,
+    "competitor": COMPETITOR_DAILY_NAMES,
+}
 
 
 def _source_tier(source_name: str) -> str:
@@ -193,6 +206,40 @@ def _dominant_category(articles: list[Article]) -> str | None:
     return counter.most_common(1)[0][0]
 
 
+def _build_tier_filter(tiers: tuple[str, ...]):
+    """티어 → source_name SQL 필터.
+
+    own 은 정확 일치(서울신문 브랜드 혼재 방지), agency/competitor 는
+    naver 추출 도메인 변이(예: 'BBC News' → BBC) 수용을 위해 ILIKE.
+    """
+    conditions = []
+    for tier in tiers:
+        for name in _TIER_TO_SOURCE_NAMES.get(tier, []):
+            if tier == "own":
+                conditions.append(Article.source_name == name)
+            else:
+                conditions.append(Article.source_name.ilike(f"%{name}%"))
+    return conditions
+
+
+def _build_keyword_filter(keywords: list[str], dialect_name: str):
+    """키워드 매칭 SQL 필터 — postgres 는 JSONB has_any, 그 외는 ILIKE fallback.
+
+    analysis.keywords 배열에 주어진 키워드 중 하나라도 포함되거나,
+    기사 제목에 키워드가 substring 으로 등장하는 경우를 후보로 선별한다.
+    """
+    title_conditions = [Article.title.ilike(f"%{kw}%") for kw in keywords if kw]
+    if dialect_name == "postgresql":
+        # JSONB has_any(키워드 배열) — GIN 인덱스(ix_article_analyses_keywords_gin) 활용
+        overlap = ArticleAnalysis.keywords.cast(JSONB).has_any(pg_array(keywords, type_=String))
+        return [overlap, *title_conditions]
+    # SQLite 테스트 환경: JSON 컬럼 텍스트 substring 으로 근사 — 수만 건이 없으므로 OK
+    json_like_conditions = [
+        ArticleAnalysis.keywords.cast(String).ilike(f'%"{kw}"%') for kw in keywords if kw
+    ]
+    return [*json_like_conditions, *title_conditions]
+
+
 async def _retrieve_by_tier(
     db: AsyncSession,
     keywords: list[str],
@@ -204,28 +251,56 @@ async def _retrieve_by_tier(
 
     tiers: ('own', 'agency') → references 용 / ('competitor',) → background 용
     Reranking: score = 0.6 × (키워드 매칭 수) + 0.4 × recency_score
+
+    파이프라인:
+      1) SQL 레벨에서 티어(source_name) + exclude_ids + recency window
+         + 키워드 후보 필터(postgres 는 JSONB has_any + ILIKE, 그 외는 ILIKE fallback)
+         로 후보를 _RETRIEVAL_CANDIDATE_LIMIT 이하로 축소.
+      2) Python 에서 정확 매칭 수 계산 + recency 가중 재랭킹 → top_n.
+
+    개선 이유: 이전 구현은 기사 테이블 전체를 메모리로 로드한 뒤 Python
+    으로 티어·키워드를 걸러내 수만 건 이상에서 OOM·지연 발생.
     """
     if not keywords or not tiers:
         return []
 
     window_start = datetime.now(timezone.utc) - timedelta(days=_RECENCY_WINDOW_DAYS)
+    tier_conditions = _build_tier_filter(tiers)
+    if not tier_conditions:
+        return []
 
-    stmt = select(Article).where(~Article.id.in_(exclude_ids))
-    rows = list((await db.execute(stmt)).scalars().all())
+    dialect_name = db.bind.dialect.name if db.bind else "postgresql"
+    kw_conditions = _build_keyword_filter(keywords, dialect_name)
+
+    stmt = (
+        select(Article, ArticleAnalysis)
+        .outerjoin(ArticleAnalysis, Article.id == ArticleAnalysis.article_id)
+        .where(or_(*tier_conditions))
+        .where(
+            (Article.published_at.is_(None)) | (Article.published_at >= window_start)
+        )
+    )
+    if exclude_ids:
+        stmt = stmt.where(~Article.id.in_(exclude_ids))
+    if kw_conditions:
+        stmt = stmt.where(or_(*kw_conditions))
+    stmt = stmt.order_by(Article.published_at.desc().nullslast()).limit(
+        _RETRIEVAL_CANDIDATE_LIMIT
+    )
+
+    rows = list((await db.execute(stmt)).all())
     if not rows:
         return []
 
     kw_set = set(keywords)
     scored: list[tuple[float, Article, int]] = []
 
-    for art in rows:
-        if _source_tier(art.source_name) not in tiers:
-            continue
+    for art, analysis in rows:
+        # SQL 필터가 approximate matching 이므로 Python 에서 정확 재검사
         match_count = 0
-        if art.analysis and art.analysis.keywords:
-            match_count = len(kw_set & set(art.analysis.keywords))
+        if analysis and analysis.keywords:
+            match_count = len(kw_set & set(analysis.keywords))
         if match_count == 0:
-            # 제목 경계 매칭 fallback (3자+ 한글, 영숫자 단어경계)
             if any(_title_contains(art.title, kw) for kw in keywords):
                 match_count = 1
         if match_count == 0:

@@ -120,6 +120,8 @@ async def classify_and_save(article: Article, db: AsyncSession) -> ArticleAnalys
         importance_score=parsed.importance_score,
         analyzed_at=datetime.now(timezone.utc),
         model_used=result["model_used"],
+        prompt_tokens=result.get("prompt_tokens"),
+        completion_tokens=result.get("completion_tokens"),
     )
 
     db.add(analysis)
@@ -175,6 +177,8 @@ async def classify_batch(
             importance_score=parsed.importance_score,
             analyzed_at=datetime.now(timezone.utc),
             model_used=result["model_used"],
+            prompt_tokens=result.get("prompt_tokens"),
+            completion_tokens=result.get("completion_tokens"),
         )
         db.add(analysis)
         await db.commit()

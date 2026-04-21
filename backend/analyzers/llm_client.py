@@ -3,11 +3,36 @@
 import json
 import logging
 
-from anthropic import AsyncAnthropic
+from anthropic import AsyncAnthropic, APIConnectionError, APIStatusError, APITimeoutError, RateLimitError
+from tenacity import (
+    before_sleep_log,
+    retry,
+    retry_if_exception,
+    stop_after_attempt,
+    wait_exponential,
+)
 
 from backend.config import get_settings
 
 logger = logging.getLogger(__name__)
+
+
+# Anthropic API 일시 장애 대응: 연결/타임아웃/429/5xx 는 지수 백오프로 3회 재시도.
+# 4xx(인증·스키마 오류)는 재시도해도 동일 실패이므로 대상에서 제외.
+_RETRYABLE_EXCEPTIONS = (
+    APIConnectionError,
+    APITimeoutError,
+    RateLimitError,
+)
+
+
+def _should_retry(exc: BaseException) -> bool:
+    """재시도 대상 판별 — 일시 장애(연결/타임아웃/429/5xx)만 재시도."""
+    if isinstance(exc, _RETRYABLE_EXCEPTIONS):
+        return True
+    if isinstance(exc, APIStatusError):
+        return 500 <= getattr(exc, "status_code", 0) < 600
+    return False
 
 # ── 모델 선정 ──
 # Haiku 4.5: 빠르고 저렴. 구조화 JSON 출력, 단순 분류/요약에 최적.
@@ -36,6 +61,18 @@ def get_client() -> AsyncAnthropic:
     return _client
 
 
+@retry(
+    reraise=True,
+    stop=stop_after_attempt(3),
+    wait=wait_exponential(multiplier=1, min=1, max=10),
+    retry=retry_if_exception(_should_retry),
+    before_sleep=before_sleep_log(logger, logging.WARNING),
+)
+async def _messages_create_with_retry(client: AsyncAnthropic, **kwargs):
+    """Anthropic messages.create 를 재시도 래핑 — 일시 장애에만 지수 백오프 3회."""
+    return await client.messages.create(**kwargs)
+
+
 async def call_llm(
     system_prompt: str,
     user_message: str,
@@ -49,7 +86,8 @@ async def call_llm(
         {"content": dict, "prompt_tokens": int, "completion_tokens": int}
     """
     client = get_client()
-    response = await client.messages.create(
+    response = await _messages_create_with_retry(
+        client,
         model=model,
         max_tokens=max_tokens,
         temperature=temperature,
